@@ -18,6 +18,27 @@ from pypdf import PdfReader
 # =======================
 load_dotenv()
 
+# First, try loading from local env or Streamlit secrets
+env_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
+
+if env_key:
+    # local dev OR Streamlit secrets exist → use them
+    os.environ["OPENAI_API_KEY"] = env_key
+else:
+    # Otherwise → require user to enter their own key (for public deployment)
+    st.sidebar.header("🔑 API Key Required")
+    user_key = st.sidebar.text_input(
+        "Enter your OpenAI API Key",
+        type="password",
+        placeholder="sk-...",
+    )
+    if not user_key:
+        st.sidebar.warning("Please enter your API key to start.")
+        st.stop()
+
+    # Set key for the session
+    os.environ["OPENAI_API_KEY"] = user_key
+
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-mini")
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "openai")
 CHAT_TEMPERATURE = float(os.getenv("CHAT_TEMPERATURE", "0.4"))
