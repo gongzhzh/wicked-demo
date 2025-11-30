@@ -1,15 +1,7 @@
 # wicked-demo
-<h1>LangGraph Tutorial</h1>
 
-<h2>Watch the full tutorial on my YouTube Channel</h2>
-<div>
-
-<a href="https://youtu.be/yhF1zTjyU3A">
-    <img src="thumbnail_small.png" alt="Thomas Janssen Youtube" width="200"/>
-</a>
-</div>
 ## Prerequisites
-Python 3.11
+Python 3.11+
 ## Installation
 1. Clone the repository:
 ```
