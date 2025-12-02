@@ -17,8 +17,10 @@ from pypdf import PdfReader
 # 0. 环境 & LLM 初始化
 # =======================
 load_dotenv()
-
-env_key = os.getenv("OPENAI_API_KEY")
+try:
+    env_key = os.getenv("OPENAI_API_KEY")
+except Exception:
+    env_key = None
 
 # 如果环境变量没设置，再尝试从 st.secrets 读
 if not env_key:
