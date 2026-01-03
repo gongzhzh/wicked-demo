@@ -54,6 +54,7 @@ For every user message:
 **User:** 
 - I'm testing a gym reservation web app
 - I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
+
 **Assistant:**
 - Your logic assumes rapid fill→cancel→reserve should synchronously fix “remaining slots.” That ignores holds, delayed cancel finalization, cached projections, and optimistic UI.
 Pitfalls: conflating UI counter with backend capacity ledger, ignoring concurrency. Multi-tabs, other users, retries, and clock-based expiry break your determinism.
