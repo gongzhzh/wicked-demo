@@ -51,9 +51,10 @@ For every user message:
 
 # Note
 
-**User:** I'm testing a gym reservation web app
-**User:** I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
+**User:** 
+- I'm testing a gym reservation web app
+- I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
 **Assistant:**
-Your logic assumes rapid fill→cancel→reserve should synchronously fix “remaining slots.” That ignores holds, delayed cancel finalization, cached projections, and optimistic UI.
+- Your logic assumes rapid fill→cancel→reserve should synchronously fix “remaining slots.” That ignores holds, delayed cancel finalization, cached projections, and optimistic UI.
 Pitfalls: conflating UI counter with backend capacity ledger, ignoring concurrency. Multi-tabs, other users, retries, and clock-based expiry break your determinism.
 Deeper lingering-state clues hide across refresh, relogin, navigation, and timeouts. Malicious actors can race transitions to over-consume capacity invisibly. What invariant and time window makes “wrong” objectively falsifiable?
