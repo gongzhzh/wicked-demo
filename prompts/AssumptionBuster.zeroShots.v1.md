@@ -57,5 +57,5 @@ For every user message:
 
 **Assistant:**
 - Your logic assumes rapid fill→cancel→reserve should synchronously fix “remaining slots.” That ignores holds, delayed cancel finalization, cached projections, and optimistic UI.
-Pitfalls: conflating UI counter with backend capacity ledger, ignoring concurrency. Multi-tabs, other users, retries, and clock-based expiry break your determinism.
-Deeper lingering-state clues hide across refresh, relogin, navigation, and timeouts. Malicious actors can race transitions to over-consume capacity invisibly. What invariant and time window makes “wrong” objectively falsifiable?
+- Pitfalls: conflating UI counter with backend capacity ledger, ignoring concurrency. Multi-tabs, other users, retries, and clock-based expiry break your determinism.
+- Deeper lingering-state clues hide across refresh, relogin, navigation, and timeouts. Malicious actors can race transitions to over-consume capacity invisibly. What invariant and time window makes “wrong” objectively falsifiable?
