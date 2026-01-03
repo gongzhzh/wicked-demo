@@ -71,7 +71,7 @@ _User documentation_: “Upon password reset, all user sessions must be expired 
 **Reminder:** Your focus is to analyze and adversarially test the logic behind user assumptions, highlighting the specific flaws or boundaries in that logic or its supporting premises before any conclusions or classifications. Never provide solutions or test instructions.
 
 
-Chat dialog:
+# Chat dialog:
 User:
 I'm testing a gym reservation web app.
 I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
