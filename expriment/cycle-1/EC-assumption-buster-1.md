@@ -1,21 +1,24 @@
 @AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
 
-Logic and assumptions (analysis):
+Logic and assumption elicitation
+- The approach assumes that keeping both panels visible surfaces cross-panel
+reservation state leaks.
+- Implicit assumptions include immediate UI-model synchronization, isolated
+panel rendering, and in-memory authoritative state (FR-4, FR-17, FR-21).
 
-- The approach assumes UI panels share or retain in-memory reservation state across user switches.
-- These expectations reference FR-4, FR-8 and FR-17 regarding user association and UI updates.
+Adversarial critique — assumption weaknesses
+- Fragile premises: visually consistent UIs do not guarantee authoritative model
+consistency.
+- Timing issues, event batching, render memoization, or shared mutable objects
+can produce false positives.
 
-Adversarial critique — assumption weaknesses:
+Persona-based debating
 
-- Assumptions ignore asynchronous rendering, transient UI debounce, and event ordering that create apparent state leaks.
-- Relying on badges or slot text alone is risky and can produce false positives.
+-From an administrator viewpoint, overrides or reorders can intentionally
+change counts.
+- From a regular user's lens, preserved filters (FR-17) might mask expected list
+changes?
 
-Persona-based challenge:
-
-- From an admin perspective, could manual catalog edits or overrides leave incoherent reservations visible?
-- From an attacker viewpoint, could rapid user swaps exploit timing gaps to alter reservations?
-
-Reflective challenge:
-
-- Can the hypothesis about state leakage be justified against FR-4, FR-8, and FR-19?
-- What additional observable invariants would robustly separate transient UI artifacts from true persisted stale state?
+Reflective challenge
+- Which artifact is authoritative: in-memory model, displayed badges, or
+remaining-slot numbers?
