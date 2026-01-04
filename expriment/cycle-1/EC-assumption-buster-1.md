@@ -14,7 +14,7 @@ can produce false positives.
 
 Persona-based debating
 
--From an administrator viewpoint, overrides or reorders can intentionally
+- From an administrator viewpoint, overrides or reorders can intentionally
 change counts.
 - From a regular user's lens, preserved filters (FR-17) might mask expected list
 changes?
