@@ -1,1 +1,54 @@
 
+@AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
+
+Good setup — keeping both panels visible and switching users is exactly the kind of real-world interaction that exposes stale-state bugs. A few concerns about your reasoning and some things you haven’t spelled out that will change what “invariant” even means here.
+
+What you’re implicitly assuming (and why that’s risky)
+
+You haven’t defined the canonical “reservation state.” Are you checking UI selection flags, a client-side cache, the latest server model, or the DB row? Each has different semantics and allowed delays. Without that, “leak” is ambiguous.
+You’re assuming cancel is synchronous and immediately authoritative. If cancellation is processed async (background jobs, eventual consistency, or queued workflows) then a transient “stale” view is expected and not a bug.
+You assume filters/sorts always cause a fresh fetch. If the UI sometimes reuses an in-memory list and only re-filters client-side, flipping filters won’t surface server-side changes.
+You seem to assume both panels are independent views. If they share the same client state store, differences could be intentional (single source updates) or accidental (shared mutable state), and the correct behavior depends on product rules.
+You assume unique sort & filter results. Sorting by non-unique keys makes order non-deterministic, which can look like leakage when items simply change positions.
+Important architectural questions you haven’t answered (these change what invariants are meaningful)
+
+Is the authoritative model on the server, and does the UI re-query the server on relevant actions?
+Is cancellation soft-delete or a state transition? Are there lifecycle stages that are valid to see temporarily?
+Are updates pushed (websocket/stream) or polled? Is there guaranteed ordering of updates?
+Do the two panels belong to the same user session/process or to different client sessions on the same page?
+Are there caches (HTTP caches, in-memory client caches, read replicas) that introduce replication lag?
+Ways your current approach can create false alarms (so you don’t mislabel expected behavior as bugs)
+
+Optimistic UI updates: the UI might show a canceled state immediately while backend is still reconciling — appears stale if backend later rejects.
+Eventual consistency / replication lag: read replicas or async jobs can serve older state briefly.
+Out‑of‑order push notifications: websockets delivering updates in a different order than actions produce perceived inconsistencies.
+Non-deterministic sorting: items moving due to tie-breaking, not because state changed.
+Shared client state: both panels reading/writing the same store can mask whether the server was updated.
+Test environment instability: parallel test runs or external actors changing data create noise.
+Things you haven’t considered that will affect what invariants you should even attempt to assert
+
+A tolerance window: if the system is eventually consistent, the invariant must allow a convergence time instead of requiring instantaneous equality.
+Distinguishing “transient pending state” vs “stale persisted state.” The UI should be able to represent pending operations explicitly; otherwise checks will misclassify pending as stale.
+The granularity of identity and versioning: if objects carry version/ETag/timestamp then checking those is more deterministic than comparing full rendered lists.
+Sort stability: if you don’t use a unique, stable key for ordering, list diffs are noisy.
+High-level conceptual constraints you should define before selecting invariants
+
+Define the authoritative truth (server vs client cache) and the allowed propagation window.
+Define what “leak” means: visibility of another user’s reservation in a panel that should never show it, vs temporary discrepancy while an action is in-flight.
+Decide whether invariants must hold immediately or after eventual convergence.
+Decide whether ordering differences are significant or acceptable.
+Avoiding false alarms (conceptual ideas, not a checklist)
+
+Require a canonical source/version when asserting equality: comparisons that involve server-provided version/ETag/timestamp are less brittle than comparing rendered lists.
+Treat pending operations differently from committed state — your notion of “stale” should exclude items known to be pending.
+Be explicit about tolerances for replication/processing lag; anything faster than those tolerances is meaningful, slower is not.
+Use unique stable keys for sorting so reorderings aren’t mistaken for leaks.
+If panels share client state, question whether divergence is a bug or expected and make that policy explicit.
+Questions to answer before you write concrete checks
+
+Is cancellation guaranteed to be committed synchronously? If not, what’s the maximum expected latency?
+Do the panels fetch fresh data on filter/sort changes, or do they re-filter local state?
+Are updates pushed to all clients? If yes, is ordering guaranteed?
+Are admin and normal user views supposed to be isolated at the server level (i.e., server enforces visibility), or is visibility purely client-side?
+If you refine the above assumptions and answer the architecture questions, you’ll be able to pick invariants that are meaningful rather than brittle. If you want, tell me the answers to the architecture questions (synchronous vs async, shared state vs independent, push vs poll, sort key policy), and I’ll point out which of your current invariants are unrealistic or likely to generate false positives.
+
