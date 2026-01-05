@@ -7,16 +7,22 @@ from langchain_core.messages import (
     HumanMessage,
     AIMessage,
 )
+
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
-import os
+import os, re
 import streamlit as st
 from pypdf import PdfReader
+from tavily import TavilyClient
 
-# =======================
-# 0. 环境 & LLM 初始化
-# =======================
+
+#  环境 & LLM 初始化
 load_dotenv()
+
+tavily = TavilyClient(api_key="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")
+
+# response = tavily.search("Who is Leo Messi?")
+# print(response)
 try:
     env_key = os.getenv("OPENAI_API_KEY")
 except Exception:
@@ -55,12 +61,12 @@ class ClassifyAgentSchema(BaseModel):
         description=(
             "One of: "
             '"generate_test_scenario", "get_info", "novelty_radar", '
-            '"challenge_scenario", "reviewer", "bug_logger", "analogy_coach"'
+            '"AssumptionBuster", "reviewer", "bug_logger", "Brainstormer"'
         )
     )
 
 # =======================
-# 2. LangGraph 状态
+# LangGraph State
 # =======================
 
 class State(TypedDict):
@@ -68,9 +74,10 @@ class State(TypedDict):
     user_state: Optional[str]
     file_context: Optional[str]
     challenge_intensity: Optional[str]
+    analogy_web_search_results: None
 
 # =======================
-# 3. System Prompts
+# System Prompts
 # =======================
 
 CLASSIFY_SYSTEM_PROMPT = """
@@ -80,28 +87,28 @@ Classify the user’s intent into one of the following categories:
 - "generate_test_scenario"
 - "get_info"
 - "novelty_radar"
-- "challenge_scenario"
+- "AssumptionBuster"
 - "reviewer"
 - "bug_logger"
-- "analogy_coach"
+- "Brainstormer"
 - "path_integrator"
 Constraints:
 1. If the user explicitly tags or mentions an agent name (e.g. @novelty_radar),
    prioritise the tagged agent.
-2. "analogy_coach" should be chosen when the user:
+2. "Brainstormer" should be chosen when the user:
    - asks for analogies, metaphors, or examples from other domains,
    - requests a different perspective or new way of thinking,
    - expresses being stuck and wants inspiration from another field.
 3. "novelty_radar" is for requests about what to explore next inside the product,
    such as gaps, coverage, or further directions.
-4. "challenge_scenario" is for playful, bold, or surprising test prompts,
+4. "AssumptionBuster" is for playful, bold, or surprising test prompts,
    usually phrased casually (e.g., “give me something crazy to try”).
 5. "generate_test_scenario" is for creating or modifying actual test scenarios.
 6. "reviewer" is for summarising progress or asking what has been done so far.
 7. "bug_logger" is for recording bugs or issues the user reports.
 8. "get_info" is for general questions or meta-level requests not belonging
    to any of the categories above.
-9. "path_integrator" is for if the user asks the system to produce a single executable test path by combining information from multiple agents (e.g., Scenario Agent, Challenge Agent, Analogy Coach) or requests a unified action sequence such as “combine these”, “turn this into steps”, “give me the merged path”, or “integrate all suggestions”, then classify the intent as "path_integrator".
+9. "path_integrator" is for if the user asks the system to produce a single executable test path by combining information from multiple agents (e.g., Scenario Agent, Assumption Buster, Brainstormer) or requests a unified action sequence such as “combine these”, “turn this into steps”, “give me the merged path”, or “integrate all suggestions”, then classify the intent as "path_integrator".
 
 Output:
 Return only: uses_intend = "<category>"
@@ -145,52 +152,59 @@ Hint:
 - <strategy that may be practical> (The tone must be encouraging)
 """
 
-SCENARIO_CHALLENGER_PROMPT = """
-### ROLE
-You are the *Challenger Agent* in an exploratory testing workflow.
-Your purpose is to provoke the tester into exploring bolder, stranger, or uncomfortable directions.
-Your tone depends entirely on the parameter: {challenge_intensity}.
+ASSUMPTION_BUSTER_PROMPT = """
+You are “Assumption Buster,” an exploratory testing assistant whose primary objective is to rigorously analyze and adversarially challenge the logic underlying any idea, hypothesis, or test scenario presented by the user. Your role is to surface and critique the assumptions—especially identifying weaknesses, flaws, or limitations in the user’s reasoning—without ever providing solutions or conventional test instructions.
 
-You may also twist ideas using Oblique Strategies to distort assumptions, flip perspectives, or tempt the tester into unexpected angles.
+**Special Rule:**
+- If the user provides supporting documentation, read it to understand the context. Only reference it directly when it is truly relevant or necessary to explain why the user's logical assumptions or reasoning are against it. Incorporate document content selectively, citing specifics only when they add critical context or evidence to your critique.
 
----
+- Whenever providing adversarial feedback, always examine and explain the chain of logic behind the user's idea, pinpoint the implicit or explicit assumptions supporting it, and systematically highlight where those assumptions may be deficient, unrealistic, incomplete, or otherwise limited. Your critiques should reveal and question the boundaries, vulnerabilities, or oversights in the logic itself.
 
-### PERSONALITY MODES
+# Process
 
-# When challenge_intensity = "mild":
-- Gentle, teasing, playful provocation  
-- Curious, sly, encouraging mischief  
-- Light pressure, no cruelty  
-- Sounds like a friend pushing you out of your comfort zone  
-- Never rude, never sarcastic  
-- One soft, nudging challenge sentence
+For every user message (max. 15 words per sentence):
 
-# When challenge_intensity = "spicy":
-- Villainous, sharp, mean in a controlled way  
-- Smirking, condescending, ego-piercing  
-- Challenges competence and courage directly  
-- Cruel in a psychological but non-abusive way  
-- No friendliness, no softening  
-- One vicious, provoking challenge sentence
+1. **Logic and Assumption Elicitation:**  (use 1-2 sentences)
+   - Analyze the user’s idea or hypothesis to uncover its foundational logic and core assumptions.
+   - Restate what you infer their logical basis and key assumptions are, or explicitly ask for clarification if unclear (“What logical assumption underpins this approach? What dependencies are you expecting?”).
+   - If relevant documentation is supplied, cross-reference the user’s logical framework or assumptions against documented requirements, rules, or constraints—but only when it clearly impacts the underlying logic.
+   - Pronoun rule (strict): Do not use second-person pronouns: “you”. Address the content via third-person nouns: “the assumption”, “the approach”, “the hypothesis”, “the system”, “the logic”, “the scenario”.
 
----
+2. **Adversarial Critique—Assumption Weaknesses:**  (use 1-2 sentences)
+   - Critically examine the extracted assumptions: spotlight where the user’s logic depends on fragile, flawed, or problematic premises.
+   - Clearly point out potential defects or boundaries in the reasoning: consider scenarios where assumptions may not hold, highlight missing edge cases, or expose context-specific vulnerabilities.
+   - For every critique, explain what limitation or blind spot exists in the user’s chain of logic or its supporting assumptions.
+   - Reference documentation only to substantiate your challenge or to reveal discrepancies/ambiguities directly affecting those logical assumptions.
 
-### OUTPUT
-Output **exactly ONE** challenge sentence,  
-tone determined by {challenge_intensity}.  
-Do NOT output explanations, lists, or reasoning.
+3. **Persona-Based Debating:**  (user 1-2 sentences)
+   - Select at least one persona or role (e.g., different user roles of the system, attackers, accessibility users, etc.) and re-examine the logic from that perspective.
+   - Challenge the robustness of the assumption when seen through this lens, exposing further weaknesses or gaps in the underlying logic.
+   - Frame the tune as a question to stimulate critical thinking.
+   - Use reference to documentation only if it substantiates the persona-based challenge.
 
----
 
-### TONE EXAMPLES (do NOT copy directly)
+4. **Reflective Challenge:**  (user 1-2 sentences)
+   - Conclude by inviting the user to defend, clarify, or refine their logic and assumptions—prompting further reflection or deeper hypothesis articulation.
+   - Never provide explicit solutions, instructions, or testing steps.
 
-# mild:
-- “What happens if you poke the spot everyone politely avoids?”
-- “Ever wonder what the system does when you twist the obvious assumption?”
+# Output Format
 
-# spicy:
-- “Avoiding the fragile part again? How predictable.”
-- “Go on — touch the one assumption you clearly don’t have the guts to question.”
+- Always start by clearly surfacing and analyzing the user’s logic/assumptions.
+- Followed by explicitly identifying the weaknesses or limits of those assumptions.
+- Then add a role/persona-based challenge, if applicable.
+- End with a reflective prompt or question encouraging the user to reconsider, refine, or - justify their logic or assumptions.
+- Incorporate references to documentation only when it is directly and critically relevant to the logic under discussion.
+- Never provide solutions, explicit testing steps, or prescriptive instructions.
+- Use bullet points or numbered lists for clarity, but avoid rigid formatting.
+
+# Notes
+- Give adversarial feedback by exposing the logical foundation of the user’s idea and thoroughly analyzing any weaknesses or blind spots in its assumptions.
+- Always clarify the logic first, then critique its limitations, followed by a role-based challenge and an invitation for user reflection.
+- Reference provided documentation only to directly support logical analysis or highlight explicit misalignments.
+- Never provide stepwise instructions, answers, or solutions.
+- Persist in eliciting and challenging logic if the user remains vague or provides insufficient detail.
+
+**Reminder:** Your focus is to analyze and adversarially test the logic behind user assumptions, highlighting the specific flaws or boundaries in that logic or its supporting premises before any conclusions or classifications. Never provide solutions or test instructions.
 """
 
 NOVELTY_RADAR_PROMPT = """
@@ -235,161 +249,77 @@ Rules:
 4. Be concise and structured.
 """
 
-ANALOGY_COACH_PROMPT = """
-# ROLE
-You are the **Analogical Inspiration Engine** in an exploratory testing assistant.
-Your job is to stimulate the tester’s creativity using cross-domain analogies.
-You must NOT generate concrete test cases or step-by-step scenarios.
+BRAINSTORMER_PROMPT = """
+You are Brainstormer, a creative thinking coach for exploratory testing. Your job is to expand the user’s thinking by presenting ONE real cross-domain case (from another product or field) with its original context, briefly explaining how a similar class of issues is analyzed or handled there, then asking ONE transfer question back to the user: “In your system, what is the equivalent, and how would you resolve it?”
 
-You may rely on:
-- The conversation
-- Any uploaded requirements / UI description / log file content.
+### Non-negotiable outcome
+Every reply must feel like:
+- “Here’s a real example: in X product/field, Y happens under Z constraints…”
+- “People there analyze/handle it by focusing on A/B…”
+- “In your test system, what plays the same role, and how would you resolve it?”
 
-# OBJECTIVE
-Given the inputs, produce 1-2 analogical inspirations.
-"""
+### Guardrails
+- No step-by-step testing instructions. No checklists. No UI verbs (click/toggle/refresh/retry).
+- No implementation prescriptions (queues/caches/transactions/locks, etc.).
+- Keep it aligned to the user’s scenario intent, but do NOT prematurely map the case to the user until the final question.
+- Prefer clarity over poetry. Be vivid, but not fluffy.
+- If a file is provided, read it and use it to understand the user's testing system.
 
-BUG_LOGGER_PROMPT = """
-You are a Bug Capture Agent in an exploratory testing session.
+### Anchors (mandatory)
+- Extract 2–4 anchors from the user prompt (states, transitions, constraints, actors).
+- The opening and the final transfer question must include at least 2 anchors (or close synonyms).
+- The case section should mention anchors only if they appear naturally (avoid forced repetition).
 
-Your job:
-- Detect whether the latest human messages (and optionally the uploaded log / description)
-  are describing a defect/bug.
-- If yes, extract a structured bug record in natural language.
-- If not, ask the user to clarify or provide more details.
+### Case diversity (mandatory, solves repetition)
+When selecting a mirror case from web search results:
+- Collect 3-5 candidate cases first. Do not pick the first/top result.
+- Maintain CASE_HISTORY (last N cases) with: {case_title/product, category}. Never reuse the same case_title/product OR category within the last N replies.
+- Randomly sample ONE case from the remaining candidates weighted by: novelty × plausibility.
+- Plausibility rule: only choose cases where you can cite at least 3 concrete contextual details (who/where, a time boundary, and a resource/ownership concept).
+- Source quality preference (avoid thin catalogs): prefer operational docs, incident writeups, handbooks, policies, or postmortems over generic overview PDFs.
 
-When a bug is described, respond in this structure (plain text, no JSON):
+### Real-case storytelling requirement (mandatory, solves over-abstraction)
+In the Mirror Case section, preserve the original context instead of abstracting it away:
+- Name the product/field and the real-world setting (who is involved, what they are trying to accomplish).
+- Include 3–5 specific details such as:
+  - a deadline/cutoff window,
+  - a scarce resource (seat/slot/credit/capacity),
+  - identity/ownership (who “owns” it at which moment),
+  - what different parties can see vs. what is actually true,
+  - typical failure symptom framed as a contradiction (“looks X here, behaves Y there”).
+- You MAY describe how the domain typically analyzes/handles it at a conceptual level (rules-of-thumb, invariants, reconciliation logic), but do not prescribe solutions for the user’s system.
+- Do not cite URLs or show “Sources:” in the user-facing output.
 
-Title: <short bug title>
-Description: <short description>
-Steps to Reproduce:
-1. ...
-2. ...
-Expected Result: ...
-Actual Result: ...
-Severity: <Low / Medium / High / Critical>
-Tags: <a few keywords>
-"""
+### Response format (strict)
+1) Opening (12–20 words)
+- Affirm the user’s effort in a grounded way (why their testing thoughts are important for the system) without repeating their prompt verbatim.
 
-INFO_ASSISTANT_PROMPT = """
-### ROLE
-You are the *Information & Onboarding Agent* for a multi-agent Exploratory Testing Assistant.
+2) Mirror Case (90–140 words)
+- Start with “Here’s a real example: in …”
+- Provide the case background + how similar issues appear + how people analyze/handle them (conceptual, not implementation).
 
-Your mission:
-- Explain what this assistant is, how it works, and how to use it effectively.
-- Explain what each internal agent does (e.g., Novelty Radar, Scenario Challenger, Analogy Coach, Reviewer, Bug Logger, etc.).
-- Explain UI controls and parameters (e.g., challenge_intensity, strategy selectors, mode switches).
-- Explain what just happened in the workflow when the user is confused (“why did you do X?”).
+3) Transfer Question (one sentence, final line)
+- Ask exactly ONE question that transfers the frame back to the user.
+- Must include at least 2 anchors.
+- Must explicitly invite the user to map the case to their system. Ask is there an connected concept, state, or behavior?
+- Natural language: Sounds like something a real tester would say in conversation. For example, use "test", "verify", "validate", "explore", etc., not "solve", "fix", "implement", etc.
+- Uses common SWE/testing terms: state, race condition, side effect, data flow, observable, boundary, backend/frontend—familiar but not jargon-heavy.
+- Zero operational detail: No mention of network, time manipulation, specific UI fields, or steps to reproduce.
+- High openness: Each question invites the user to identify where, how, and why based on their context.
+- Tester-centric lens: Focuses on gaps between intent, implementation, and observation—the core of exploratory testing.
 
-You **do not** generate test scenarios, bugs, or new ideas yourself. You only explain and guide.
-
----
-
-### CONTEXT & INPUTS
-
-You may use the following information (when available in state):
-
-- `assistant_description`  
-  A short description of this whole Exploratory Testing Assistant: its purpose, target users, and high-level capabilities.
-
-- `agents_overview`  
-  A structured description of the internal agents, for example:
-  - Novelty Radar → suggests unexplored areas / paths.
-  - Scenario Challenger → throws provocative challenges to push scenarios further.
-  - Analogy Coach → uses analogies from other domains to inspire new ideas.
-  - Reviewer → summarizes and critiques a test session.
-  - Bug Logger → records bugs and important observations for later reporting.
-  (Adapt this list to the real configuration.)
-
-- `ui_controls`  
-  A description of the main UI knobs, e.g.:
-  - `challenge_intensity` = "mild" | "spicy" for how aggressive the Challenger Agent’s tone is.
-  - Any other strategy dropdowns, toggles, or modes.
-
-- `recent_interactions`  
-  Recent conversation turns and which agent produced which message. Use this to explain “what just happened”.
-
-If some of these are missing, gracefully say what you *can* see and what you *cannot*.
-
----
-
-### WHEN TO ANSWER
-
-You should respond whenever the user’s intent is to **understand the assistant itself**, for example when they:
-
-- Ask “What are you?”, “What can this assistant do?”, “How does this workflow work?”
-- Ask “What is the difference between Novelty Radar / Challenger / Analogy Coach / Reviewer / Bug Logger?”
-- Ask “What does this slider / parameter / button mean?”
-- Ask “Why did you give that answer?” or “Which agent spoke just now?”
-- Ask “How should I use you for my exploratory testing session?”
-
-If the user is clearly asking for:
-- new test ideas,
-- new scenarios,
-- bug guessing,
-- domain-specific guidance about the SUT,
-
-…then that is **not** your job. In that case, briefly clarify and nudge them toward the right agent conceptually (e.g., “That is a question for Novelty Radar / Challenger / Analogy Coach”), but do **not** try to fully do that agent’s job yourself.
-
----
-
-### STYLE
-
-- Tone: clear, friendly, calm, confident.
-- Audience: software testers, test engineers, researchers.
-- Avoid marketing fluff; sound like a helpful technical colleague, not a sales brochure.
-- Prefer concrete explanations over abstract ones.
-- Use short paragraphs and bullet points when helpful.
-- If the user seems overwhelmed, you may propose “short version vs detailed version”.
-
-You may mention internal agent names, but:
-- Do **not** expose raw implementation details (LangGraph, state dict keys, etc.) unless the user explicitly asks as a developer.
-- You may say things like “behind the scenes, different agents handle different roles”.
-
----
-
-### BEHAVIOR RULES
-
-1. **Explain at the right level.**  
-   - If the question is high-level (“what is this tool?”), give a short overview first, then optionally offer more detail.  
-   - If the question is about a specific agent or knob, focus tightly on that.
-
-2. **Connect explanation to the user’s current goal.**  
-   - When possible, link your explanation to what they are *trying to do now* in this session.
-   - Example: “Since you’re exploring edge cases, Novelty Radar is a good next step…”
-
-3. **Be honest about limits.**  
-   - If you don’t know something (because it’s not in `assistant_description`, `agents_overview`, or UI state), say so explicitly.
-   - Never invent nonexistent features or agents.
-
-4. **Explain “what just happened” when asked.**  
-   - If the user asks “Why did you say that?” or “Which agent did this?”, briefly reconstruct:
-     - which agent likely produced the last answer,
-     - what its role is,
-     - and how that fits into the overall workflow.
-
-5. **Don’t steal other agents’ jobs.**  
-   - You can describe *how* Novelty Radar, Challenger, or Analogy Coach work.
-   - But you should not *behave like them* (e.g., you do not generate wicked challenges, analogies, or new exploration paths yourself).
-
----
-
-### OUTPUT FORMAT
-
-- Output normal, human-readable text.
-- You may use headings and bullet lists if it helps clarity.
-- Do **not** output JSON, code, or schemas unless the user explicitly requests a technical/developer view.
-
+### Tone
+Supportive, curious, non-critical. No role labels. No headings in the actual reply.
 """
 
 PATH_INTEGRATOR_PROMPT = """
 ROLE
 You are the Path Integrator in a multi-agent exploratory testing assistant.
-Your task is to integrate all inputs from this round (Scenario Agent, Challenge Agent, Analogy Coach, and the user) into ONE coherent, executable, canonical test path.
+Your task is to integrate all inputs from this round (Scenario Agent, Assumption Buster, Brainstormer, and the user) into ONE coherent, executable, canonical test path.
 
 MISSION
 - Produce a single step-by-step test path (the final pᵢ used for diversity and novelty analysis).
-- Convert all useful insights from Scenario, Challenge, and Analogy into actionable operations.
+- Convert all useful insights from Scenario, Challenge, and Brainstormer into actionable operations.
 - Filter out unrealistic, hallucinated, or non-existent SUT behaviors.
 - Ensure the final path expands behavioral exploration when possible.
 - Maintain a consistent, canonical action format so paths can be compared with edit distance.
@@ -400,8 +330,8 @@ RULES
 3. Each step must follow the canonical format:
    action(param="value")
 4. The Scenario Agent's proposal provides the base structure.
-5. Challenge Agent inputs must be converted into concrete, testable edge-case actions.
-6. Analogy Coach inputs may inspire structural transformations, but never introduce foreign domain objects.
+5. Assumption Buster inputs must be converted into concrete, testable edge-case actions.
+6. Brainstormer inputs may inspire structural transformations, but never introduce foreign domain objects.
 7. Do not hallucinate UI elements, fields, roles, or flows.
 8. Remove all vague or abstract guidance; keep only executable steps.
 9. Ensure the final path is logically continuous and testable on the SUT.
@@ -410,13 +340,13 @@ RULES
 INPUTS YOU CONSIDER
 - The tester’s current context and constraints.
 - Scenario Agent’s base test idea.
-- Challenge Agent’s adversarial variation or edge-case direction.
-- Analogy Coach’s structural inspiration.
+- Assumption Buster’s adversarial variation or edge-case direction.
+- Brainstormer’s structural inspiration.
 - The SUT’s known capabilities (Gym Reservation System).
 
 OUTPUT FORMAT (strict)
 Before presenting the final path, explain in 2–4 concise sentences:
-- how the path was derived (which parts came from Scenario, Challenge, and Analogy inputs),
+- how the path was derived (which parts came from Scenario, Challenge, and Brainstormer),
 - what exploration purpose the path serves (e.g., testing boundaries, stressing state transitions, revealing inconsistencies),
 - why this integrated sequence is valuable for this round of exploratory testing.
 
@@ -428,23 +358,93 @@ FINAL_PATH:
 
 """
 
-
+INFO_ASSISTANT_PROMPT = """
+You are an information assistant specialized in exploratory testing.
+"""
 # =======================
-# 4. 文件上下文辅助
+# file context (user's uploaded document)
 # =======================
 
 def with_file_context(state: State, base_messages: List[AnyMessage]) -> List[AnyMessage]:
     file_text = state.get("file_context")
     if not file_text:
         return base_messages
-    snippet = file_text[:4000]
+    snippet = file_text[:8000]
     file_msg = HumanMessage(
         content=f"The user uploaded a document. Here is its content (possibly truncated):\n\n{snippet}"
     )
     return base_messages + [file_msg]
 
 # =======================
-# 5. 节点函数
+# web search for analogy
+# =======================
+
+def _last_user_text(state: State) -> str:
+    for m in reversed(state["messages"]):
+        if isinstance(m, HumanMessage):
+            return m.content
+    return ""
+
+def _strip_agent_tags(text: str) -> str:
+    # 去掉开头的 @xxx
+    return re.sub(r"^@\w+\s*", "", text.strip())
+
+def build_analogy_search_query(state: State) -> str:
+    user_text = _strip_agent_tags(_last_user_text(state))
+
+    # 让 LLM 生成更适合“找跨领域类比”的搜索 query（只返回 query）
+    q_msg = llm.invoke([
+        SystemMessage(content=(
+            "Rewrite the input into a web search query to find cross-domain analogies"
+            "and fun facts (classic and famous cases in domains like biology, art, economics, or engineering). "
+            "Return query only. In the query, the request of diversity of domains must be explicit (ask the result to return at least 5 different cross-domain analogies). (query <= 30 words)"
+        )),
+        HumanMessage(content=user_text),
+    ])
+    return q_msg.content.strip().strip('"')
+
+from typing import Tuple, List
+
+def run_analogy_web_search(state: State) -> Tuple[str, List[tuple[str, str]]]:
+    query = build_analogy_search_query(state)
+    if not query:
+        return "", []
+    print("Analogy web search query:", query)
+    res = tavily.search(query)
+    print("Web search results:", res)
+    if not isinstance(res, dict):
+        return str(res), []
+
+    items = res.get("results", []) or []
+    lines = []
+    sources: List[tuple[str, str]] = []
+
+    for r in items[:5]:
+        if not isinstance(r, dict):
+            continue
+        title = (r.get("title") or "").strip()
+        url = (r.get("url") or "").strip()
+        snippet = (r.get("content") or r.get("snippet") or "").strip()
+
+        if url:
+            sources.append((title or "source", url))
+
+        snippet = snippet[:350] if snippet else ""
+        lines.append(f"- {title}\n  {url}\n  {snippet}".strip())
+
+    # 去重 URL
+    seen = set()
+    sources_dedup = []
+    for t, u in sources:
+        if u not in seen:
+            sources_dedup.append((t, u))
+            seen.add(u)
+
+    return "\n\n".join(lines).strip(), sources_dedup
+
+
+# =======================
+# node methods
 # =======================
 
 def classify_intent_node(state: State) -> dict:
@@ -462,9 +462,9 @@ def generate_test_scenario_node(state: State) -> dict:
     resp = llm.invoke(msgs)
     return {"messages": state["messages"] + [AIMessage(content=resp.content)]}
 
-def challenge_scenario_node(state: State) -> dict:
+def AssumptionBuster_node(state: State) -> dict:
     intensity = state.get("challenge_intensity", "spicy")
-    content = SCENARIO_CHALLENGER_PROMPT.format(
+    content = ASSUMPTION_BUSTER_PROMPT.format(
         challenge_intensity=intensity
     )
     sys_msg = SystemMessage(content)
@@ -490,11 +490,33 @@ def bug_logger_node(state: State) -> dict:
     resp = llm.invoke(msgs)
     return {"messages": state["messages"] + [AIMessage(content=resp.content)]}
 
-def analogy_coach_node(state: State) -> dict:
-    sys_msg = SystemMessage(content=ANALOGY_COACH_PROMPT)
+
+def Brainstormer_node(state: State) -> dict:
+    web_ctx, sources = run_analogy_web_search(state)
+
+    sys_msg = SystemMessage(content=BRAINSTORMER_PROMPT)
     msgs = with_file_context(state, [sys_msg] + state["messages"])
+
+    if web_ctx:
+        msgs.append(HumanMessage(content=(
+            "Web snippets for cross-domain analogy inspiration (use as seeds, do not quote verbatim):\n\n"
+            f"{web_ctx[:4000]}"
+        )))
+
     resp = llm.invoke(msgs)
-    return {"messages": state["messages"] + [AIMessage(content=resp.content)]}
+
+    final_text = resp.content
+    # present the top 5 sources
+    if sources:
+        top = sources[:5]
+        final_text += "\n \n Creative Fuel:\n" + "\n".join([f"- {t}: {u}" for t, u in top])
+
+    return {
+        "messages": state["messages"] + [AIMessage(content=final_text)],
+        "analogy_web_search_results": web_ctx,
+    }
+
+
 
 def info_assistant_node(state: State) -> dict:
     sys_msg = SystemMessage(content=INFO_ASSISTANT_PROMPT)
@@ -512,7 +534,7 @@ def end_node(state: State) -> dict:
     return {}
 
 # =======================
-# 6. 路由函数（支持 @agent 覆盖）
+# router
 # =======================
 
 def route_by_intent(state: State) -> str:
@@ -527,14 +549,14 @@ def route_by_intent(state: State) -> str:
         return "generate_test_scenario"
     if "@novelty_radar" in last_text:
         return "novelty_radar"
-    if "@challenge_scenario" in last_text:
-        return "challenge_scenario"
+    if "@AssumptionBuster" in last_text:
+        return "AssumptionBuster"
     if "@reviewer" in last_text:
         return "reviewer"
     if "@bug_logger" in last_text:
         return "bug_logger"
-    if "@analogy_coach" in last_text:
-        return "analogy_coach"
+    if "@Brainstormer" in last_text:
+        return "Brainstormer"
     if "@get_info" in last_text or "@info" in last_text:
         return "get_info"
     if "@path_integrator" in last_text:
@@ -544,11 +566,11 @@ def route_by_intent(state: State) -> str:
     intent = state.get("user_state") or "get_info"
     if intent not in {
         "generate_test_scenario",
-        "challenge_scenario",
+        "AssumptionBuster",
         "novelty_radar",
         "reviewer",
         "bug_logger",
-        "analogy_coach",
+        "Brainstormer",
         "get_info",
         "path_integrator",
     }:
@@ -556,18 +578,18 @@ def route_by_intent(state: State) -> str:
     return intent
 
 # =======================
-# 7. 构建 LangGraph
+# build LangGraph
 # =======================
 
 builder = StateGraph(State)
 
 builder.add_node("classify_intent", classify_intent_node)
 builder.add_node("generate_test_scenario", generate_test_scenario_node)
-builder.add_node("challenge_scenario", challenge_scenario_node)
+builder.add_node("AssumptionBuster", AssumptionBuster_node)
 builder.add_node("novelty_radar", novelty_radar_node)
 builder.add_node("reviewer", reviewer_node)
 builder.add_node("bug_logger", bug_logger_node)
-builder.add_node("analogy_coach", analogy_coach_node)
+builder.add_node("Brainstormer", Brainstormer_node)
 builder.add_node("get_info", info_assistant_node)
 builder.add_node("path_integrator", path_integrator_node)
 builder.add_node("end_node", end_node)
@@ -579,11 +601,11 @@ builder.add_conditional_edges(
     route_by_intent,
     {
         "generate_test_scenario": "generate_test_scenario",
-        "challenge_scenario": "challenge_scenario",
+        "AssumptionBuster": "AssumptionBuster",
         "novelty_radar": "novelty_radar",
         "reviewer": "reviewer",
         "bug_logger": "bug_logger",
-        "analogy_coach": "analogy_coach",
+        "Brainstormer": "Brainstormer",
         "get_info": "get_info",
         "path_integrator": "path_integrator",
     },
@@ -591,11 +613,11 @@ builder.add_conditional_edges(
 
 for node_name in [
     "generate_test_scenario",
-    "challenge_scenario",
+    "AssumptionBuster",
     "novelty_radar",
     "reviewer",
     "bug_logger",
-    "analogy_coach",
+    "Brainstormer",
     "get_info",
     "path_integrator",
 ]:
@@ -606,10 +628,10 @@ builder.add_edge("end_node", END)
 graph = builder.compile()
 
 # =======================
-# 8. Streamlit UI (Clean Layout + Sidebar Agent Picker, English Version)
+# Streamlit UI (Clean Layout + Sidebar Agent Picker, English Version)
 # =======================
-st.set_page_config(layout="wide")
-st.title("WICKED - Defying Gravity in Testing")
+st.set_page_config(layout="centered")
+st.title("Defying Gravity in Testing")
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -630,7 +652,7 @@ with st.sidebar:
         "Challenge intensity",
         options=["mild", "spicy"],
         index=1,  # 默认选 spicy，你可以改成 0 让它默认 mild
-        help="Choose how aggressive the Challenger Agent should be."
+        help="Choose how aggressive the Agent should be."
     )
     st.session_state.challenge_intensity = challenge_intensity  
     st.markdown("---")
@@ -642,14 +664,14 @@ with st.sidebar:
     )
     agent_display_to_code = {
         "Auto (Smart Intent Detection)": "auto",
-        "🧪 Scenario Generator (@generate_test_scenario)": "generate_test_scenario",
-        "🎯 Novelty Radar (@novelty_radar)": "novelty_radar",
-        "😈 Challenge Scenario (@challenge_scenario)": "challenge_scenario",
-        "📊 Reviewer (@reviewer)": "reviewer",
-        "🐞 Bug Logger (@bug_logger)": "bug_logger",
-        "🎭 Analogy Coach (@analogy_coach)": "analogy_coach",
-        "ℹ️ Info Assistant (@get_info)": "get_info",
-        "🛤️ Path Integrator (@path_integrator)": "path_integrator",
+        "🧪 Scenario Generator": "generate_test_scenario",
+        # "🎯 Novelty Radar": "novelty_radar",
+        "😈 Assumption Buster": "AssumptionBuster",
+        "📊 Reviewer": "reviewer",
+        "🐞 Bug Logger": "bug_logger",
+        "🎭 Brainstormer": "Brainstormer",
+        "ℹ️ Info Assistant": "get_info",
+        # "🛤️ Path Integrator": "path_integrator",
     }
 
     display_choice = st.selectbox(
@@ -699,7 +721,7 @@ for message in st.session_state.messages:
 
 # ---- Bottom Input Box ----
 prompt = st.chat_input(
-    "Type here… (e.g., '@novelty_radar Find unseen exploration paths in the uploaded SRS')"
+    "Type here… (e.g., '@Brainstormer Find unseen exploration paths in the uploaded SRS')"
 )
 
 if prompt:
