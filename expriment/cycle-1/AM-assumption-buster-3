@@ -1,0 +1,18 @@
+@AssumptionBuster I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
+
+Logic and assumptions (surface):
+
+The approach assumes rapid fill→cancel→reserve exposes transient inconsistency in remaining slots.
+Implicit assumptions include synchronous UI updates, atomic state transitions, and accurate in-memory counters.
+Adversarial critique — assumption weaknesses:
+
+UI update timing, event batching, or debounced renders could mask or reorder state changes.
+FR-24 and FR-31 expect immediate adjustments, yet SPA in-memory state may produce stale displays.
+Persona-based challenge (role perspective):
+
+From a concurrent-user or attacker persona: could race conditions during rapid actions misassociate reservations?
+From an admin persona: could manual overrides or edits fail to propagate, leaving inconsistent slots?
+Reflective challenge (invite refinement):
+
+Which specific sequence and timing granularity is expected during the reproduce attempt?
+Provide assumptions about rendering, event ordering, and admin interactions for deeper critique.
