@@ -1,0 +1,17 @@
+@AssumptionBuster I’m trying to reproduce a ‘remaining slots feels wrong’ issue using fill → cancel → reserve quickly. List pitfalls, then suggest deeper paths to detect lingering state after transitions.
+
+Logic and assumptions (inferred)
+
+Inferred logic: Rapid fill→cancel→reserve sequence will reveal lingering remaining-slots state.
+Implicit assumptions: UI updates are synchronous, state resets immediately, and no background reconciliation occurs.
+Adversarial critique — assumption weaknesses
+
+This assumes single-threaded execution and instantaneous DOM refreshes, which may be false.
+That assumption conflicts with FR-8 and BR-2, which require accurate remaining-slots updates but do not guarantee update ordering or timing.
+Persona-based challenge
+
+Attacker/concurrent-user lens: would rapid actions from multiple User IDs race to modify remaining slots?
+Reflective challenge
+
+Which precise timing windows and UI events define "quickly" in the scenario?
+How is "remaining slots feels wrong" measured or observed, and what acceptable bounds exist?
