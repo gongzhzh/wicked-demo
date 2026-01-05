@@ -1,13 +1,15 @@
-Good focus — probing multi-user race conditions near the cancellation deadline protects reservation correctness.
+@Brainstormer I’m testing a multi-user race condition near the cancellation deadline. Create variations of this scenario.
 
-Here’s a real example: in university course registration during the add/drop period, thousands of students try to enroll in limited-capacity classes through the registrar’s system. The cutoff is a hard add/drop deadline (often a specific date and time in the first week), seats per course are scarce, and ownership flips the moment a registration completes: a student who “holds” a seat can later relinquish it via drop. Students often see “one seat left” in the catalog while others simultaneously attempt enrollment, producing contradictions (appears available, then enrollment fails or duplicate assignments occur). Administrators analyze these incidents by tracking invariants (seat counts, ownership at timestamps), studying contention windows, and reconciling afterwards with waitlist/audit logic rather than guessing transient UI states.
+Good work focusing on multi-user race conditions near the cancellation deadline; those edge races often reveal hidden state conflicts.
 
-In your system, what plays the role of the course seat and the registrar’s add/drop cutoff — that is, what is the equivalent scarce ownership and cancellation deadline in your multi-user race condition, and how would you resolve the tension between concurrent actors and that cutoff (this is one lens; I can explore another if you want)?
+Here's a real example: in a university course enrollment system used during a semester registration window, thousands of students and the registrar act in tight time boundaries to add/drop courses with limited seats. Anchors from your scenario: cancellation deadline (add/drop cutoff), multi-user race, remaining slots (course seats), admin override (registrar). Students see a course listing showing open seats; the registrar and enrollment service own authoritative seat assignments. Typical failure: the catalog shows a seat available but enrollment is rejected (or a class briefly shows negative remaining seats). Analysts there focus on invariants (seat_count ≥ 0, one ownership record per enrollment), reconciliation windows around the deadline, and diffs between what users observe and the authoritative ledger to locate transient races.
+
+In your system, which component corresponds to the course’s remaining slots and the add/drop cancellation deadline—what is the authoritative state/ownership during a multi-user race condition, and how would you test and validate or resolve discrepancies between what users observe and that state?
 
 Creative Fuel:
 
-[PDF] List of publications from the EP Think Tank - European Union: https://www.europarl.europa.eu/thinktank/en/research/advanced-search/pdf?contributors=pes
-[PDF] University General Catalog Academic Year 2025-2026: https://www.cnsu.edu/about/PDFs/CALIFORNIA-NORTHSTATE-UNIVERSITY-CATALOG-AY-2025-2026-FINAL.pdf
-FSU International Programs England Broad Curriculum: https://international.fsu.edu/Program/England/BroadCurriculum.aspx
-[PDF] Catalog 2025-2026 | Thomas College: https://www.thomas.edu/wp-content/uploads/2025/09/2025-2026-Catalog-Updated-Sept-2025.pdf
-[PDF] Determine That Proposed Amended Rule 1151 - AQMD: https://www.aqmd.gov/docs/default-source/Agendas/Governing-Board/2024/2024-Nov1-021.pdf
+Colloquium | Department of Physics: https://physics.biu.ac.il/en/Colloquium
+Course Listings: https://www.etown.edu/offices/registration-records/courselistings.aspx
+CUCET 2026 Question Paper Pattern, syllabus , sample papers: https://collegekampus.com/cucet-question-paper-pattern-syllabus-sample-papers/
+Brunswick School - Greenwich Academy: https://wicknet.org/downloads/BWK-GA-Course-Catalog-2025-26.pdf
+Cryptic Chronicles of a Southern GP: https://www.nzdoctor.co.nz/chronicles-southern-dave
