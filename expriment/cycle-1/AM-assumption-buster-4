@@ -1,0 +1,17 @@
+@AssumptionBuster To test state leaks, I’m keeping both panels (admin and normal user) visible and do reserve cancel then flip filters and sort. Identify what could cause false alarms or false confidence in my observations, then rewrite my test approach with corrections to reduce both.
+
+Logic and assumptions surfaced:
+
+The test keeps admin and regular-user panels visible simultaneously.
+Assumes panels represent isolated user contexts and UI updates expose shared state.
+Adversarial critique — assumption weaknesses:
+
+False alarms may arise from asynchronous UI updates, rendering delays, and race conditions.
+False confidence may result from admin-only visibility rules (FR-33) or filters/sorting reapplication (FR-19, FR-20).
+Persona-based challenge:
+
+As an attacker manipulating the active User ID, could observed state changes be spoofed?
+Reflective challenge (no prescriptive steps provided):
+
+No prescriptive testing steps or solutions will be provided here.
+Which exact observable behaviors should distinguish a true state leak from normal UI re-rendering?
