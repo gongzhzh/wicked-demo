@@ -1,15 +1,15 @@
-Good focus — testing racey behavior around the cancellation deadline and remaining slots catches high-risk system behavior.
+@Brainstormer I’m testing a multi-user race condition near the cancellation deadline. Create variations of this scenario.
 
-Here’s a real example: in a university course-registration system during the add/drop week, thousands of students try to grab limited course seats before the enrollment cutoff. Context: the registrar closes add/drop at the end of the second week (deadline), each course has a strict capacity (scarce seats), instructors or the registrar can issue permission numbers or manually increase capacity (ownership/override), and students sometimes put a class in a “shopping cart” while deciding. Typical symptom: multiple students see “1 seat left” but one gets enrolled and others receive rejection — it looks available in the UI but enrollment fails at commit. Administrators analyze these incidents by tracing timestamps, comparing cart holds versus final enrollments, replaying audit logs, and reconciling the waitlist in scheduled batches; they also use manual override records to explain why capacity changed after a student thought they had a slot.
+Nice focus—testing multi-user race conditions near the cancellation deadline protects reservation integrity.
 
-In your system, what plays the role of the student’s temporary hold (the “cart”) and the add/drop cancellation deadline (i.e., remaining slots and cutoff), and how would you resolve the same tension between cancellation deadline, remaining slots, and admin override—this is one lens; want another?
+Here’s a real example: in hospital operating room (OR) scheduling at a regional medical center, surgical teams reserve scarce OR time for specific patients. The schedule is published weeks ahead; cancellations are permitted up until a strict cutoff (commonly about 2 hours before incision). Ownership of a slot belongs to a surgeon/team once confirmed, yet scheduling staff, OR nurses, and anesthesiology each see their own snapshots of the schedule. Typical failures sound like: the roster shows a slot available while the patient is prepped, or two teams both believe they hold the same OR. People there analyze such issues by checking who currently “owns” the slot, the cancellation cutoff invariant, visibility gaps between roles, and reconciliation/audit trails to explain contradictions.
+
+In your system, what is the equivalent ownership of a reservation and the cancellation-deadline boundary, and how would you test and validate multi-user race conditions that produce conflicting reservation/cancellation state?
 
 Creative Fuel:
 
-[PDF] Brunswick School - Greenwich Academy - Wicknet: https://wicknet.org/downloads/BWK-GA-Course-Catalog-2025-26.pdf
-[PDF] ICAR Guidelines for Intellectual Property Management and ...: https://www.cazri.res.in/itmu/pdf/icar-ipmttcguide.pdf
-Advent of Cyber 2025 | All Days Answers | Tryhackme Walkthrough: https://medium.com/pen-te3h/advent-of-cyber-2025-all-days-answers-tryhackme-walkthrough-2738cfee93e5
-Chapter 2 - Engendering the Fall of White Masculinity in Hamlet: https://www.cambridge.org/core/books/shakespeares-white-others/engendering-the-fall-of-white-masculinity-in-hamlet/195EFA422D3C542AD0D0B302AFAB1A8B
+University General Catalog Academic Year 2025-2026: https://www.cnsu.edu/about/PDFs/CALIFORNIA-NORTHSTATE-UNIVERSITY-CATALOG-AY-2025-2026-FINAL.pdf
+FSU International Programs England Broad Curriculum: https://international.fsu.edu/Program/England/BroadCurriculum.aspx
+Catalog 2025-2026: https://www.thomas.edu/wp-content/uploads/2025/09/2025-2026-Catalog-Updated-Sept-2025.pdf
+IIGD Publishers: https://iigdpublishers.com/
 2025–2026 Academic Catalog - Pepperdine | Seaver College: https://seaver.pepperdine.edu/academics/content/2025-seaver-catalog.pdf
-
-
