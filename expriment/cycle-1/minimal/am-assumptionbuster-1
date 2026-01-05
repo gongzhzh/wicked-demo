@@ -1,3 +1,4 @@
+resp_0e89d19986d50ef900695be89dffa4819382f25e6b256aa61e
 User: 
 To test state leaks, I’m keeping both panels (admin and normal user) visible and do reserve cancel then flip filters and sort. Identify what could cause false alarms or false confidence in my observations, then rewrite my test approach with corrections to reduce both.
 
@@ -41,3 +42,4 @@ Wrap‑up
 
 Your current tactic (both panels visible + single sequence) is a decent exploratory probe, but it risks both false alarms (misreading view changes or transient UI states) and false confidence (not exercising cross-session, timing, role, and refresh variants). Use the spec’s explicit invariants (BR‑12, BR‑13, FR‑24, FR‑31, FR‑20/21, FR‑33, C‑2/C‑3) as the oracle for deciding whether an observation is a true leak or an expected behavior, and reframe the test method around observing those invariants rather than just “what I see” in the panels.
 If you want, tell me which invariants you’re currently asserting (or paste one short log of an observed run) and I’ll point out specific assumptions in that run that are most likely to be misleading.
+
