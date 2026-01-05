@@ -1,15 +1,15 @@
-Good thinking—validating admin edits versus normal user view is essential for catching propagation gaps.
+@Brainstormer I’m switching between admin edits and a normal user view to see what changes propagate. Create variations of this scenario.
 
-Here’s a real example: in a mid-sized urban hospital’s bed-management system, admissions clerks, nurse managers, and surgical teams coordinate a scarce pool of ward and ICU beds. There’s a firm cutoff (e.g., surgery start time or end-of-day handoff) when holds expire, and each bed is “owned” by the ward or by a specific patient assignment. Different people see different dashboards: central dispatch may show a bed as available while a floor nurse has it on a temporary cleaning hold. Typical failure looks like “appears available in the central list, but behaves occupied at bedside.” Staff analyze these tensions by tracking time-limited holds, explicit ownership transitions, visible vs authoritative state, and reconciliation/audit workflows rather than assuming views are instantly identical.
+Good thinking—examining admin edits versus regular-user view highlights propagation and state/permission inconsistencies.
 
-What plays the role of the hospital bed (scarce, owned resource) in your system, what corresponds to the admissions clerk versus the nurse manager (mapping to admin edits and normal user view), and how would you resolve conflicts when admin edits and normal user view disagree about how changes propagate — this is one lens, ask for another if you want.
+Here's a real example: in a university course enrollment system used by students and a registrar office, conflicts popped up during a short registration window and the add/drop cutoff. Seats are scarce (course capacity), ownership is explicit (a seat is assigned to a student record), and registrars can manually override enrollments or move people from waitlists. Students saw "enrolled" or "available" on their dashboards while registrar logs showed them on a waitlist or pending hold — a classic looks-enrolled-but-is-waitlisted contradiction. People there analyze the problem by checking invariants (seat counts vs assigned students), auditing who changed what and when, and tracing visibility boundaries between admin and student views to decide reconciliation or messaging approaches.
+
+In your system, what is the equivalent admin-edit vs regular-user-view state or propagation mismatch, and how would you validate or resolve it?
 
 Creative Fuel:
 
-COPA_Trade_Theory1.pdf - Computer - Notes - Teachmint: https://www.teachmint.com/tfile/studymaterial/class-2nd/computer/copatradetheory1pdf/10deade8-a5ad-493c-b44e-4a2b33eaafe6
-Colloquium | Department of Physics: https://physics.biu.ac.il/en/Colloquium
+[PDF] Service Engineer IT Hardware - ESSCI: https://essc-india.org/participant-handook/English/Service%20Engineer%20IT%20Hardware.pdf
+[PDF] ICAR Guidelines for Intellectual Property Management and ...: https://icar.org.in/sites/default/files/inline-files/ICAR_Guidelines_for_IPM_and_Technology_Transfer_2018.pdf
+APacCHRIE 2023 FINAL CP: https://www.apacchrie.org/wp-content/uploads/2023/08/APacCHRIE-2023-FINAL-CP.pdf
 [PDF] Annual Report - 2022-2023 - IIT Mandi: https://www.iitmandi.ac.in/administration/annual_reports/annual_report2023english.pdf
-HUMAN FACTORS TRAINING MANUAL | sky library: https://skylibrarys.files.wordpress.com/2016/07/doc-9683-human-factor-training-manual.pdf
-CUCET 2026 Question Paper Pattern, syllabus , sample papers: https://collegekampus.com/cucet-question-paper-pattern-syllabus-sample-papers/
-
-
+[PDF] ICAR Guidelines for Intellectual Property Management and ...: https://www.cazri.res.in/itmu/pdf/icar-ipmttcguide.pdf
