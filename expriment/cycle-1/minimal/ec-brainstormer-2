@@ -1,0 +1,49 @@
+resp_0d73ff5f7bf90ab500695bed972ac88192915b8d2af64c832e
+
+What are the core rules to follow or states to focus when test a race condition in a multi-user book/cancel situation?
+
+Nice question — race conditions are all about violating the invariants and timing rules the system must preserve. Below are concise core rules/invariants to watch, the important UI/data states to focus on, high‑value multi‑user race scenarios (high level, not step-by-step), and quick “what‑ifs” to expand test thinking. I’ve tied each item back to the spec where the rule appears.
+
+Core rules / invariants to enforce and test
+
+Reservations may only be created when the class is in the future, the class is not full, the user has no conflicting booking, and the user has fewer than 3 future reservations (business rules BR-1, BR-2, BR-3, BR-4).
+Cancellations must be rejected for past classes or within 1 hour of the class start; accepted cancellations must remove the reservation and increment remaining slots.
+Remaining slots must never go negative and class status must reflect remaining slots/time (Available / Full / Past). That invariant (no negative slots) is explicit in the non‑functional requirements.
+UI actions must be disabled appropriately (e.g., no User ID set disables reserve/cancel).
+States to focus on (what to observe)
+
+Class-level states: Available (remaining > 0, future), Full (remaining = 0, future), Past (start time < now).
+Reservation-level states: Present / Removed / Rejected; and display labels like Upcoming / Starting soon / Past.
+UI control states: Reserve/Cancel enabled vs disabled, messages shown on success/failure, and panel refresh behavior for “Available Classes” and “My Reservations.”
+System invariants: remaining slots count, no double booking for same date/time, per-user reservation count <= 3.
+High‑value multi‑user race scenarios (conceptual)
+
+Last‑slot contention: two or more users attempt Reserve when remaining = 1. Check only one succeeds and remaining becomes 0 (Full), others get clear rejection. Watch for double‑allocations.
+Reserve vs Cancel at nearly same time: user A cancels while user B reserves; verify final remaining slots end up consistent (increment + decrement cancel/reserve cancel out or resolve deterministically) and UI panels for both users update.
+Cancel close to cutoff: Cancellation request arrives just before/after the “1 hour before start” boundary — ensure the 1‑hour rule is enforced deterministically.
+Double‑booking conflict: two operations attempt to create bookings for the same user at same date/time (or same user via two tabs). System must prevent the second (BR-3).
+Admin override vs user actions: admin changes capacity/status while users are reserving/cancelling (admin may mark Full/Cancelled). Verify propagation to user views and invariants still hold.
+Stale UI / refresh races: one browser shows Available while another completes a reserve — test that panels refresh and buttons become disabled/enabled as rules require.
+Key assertions to check after each race attempt
+
+Remaining slots equals prior value +/- accepted operations and is never negative.
+No user ends up holding two bookings for the exact same date/time; per‑user future reservations <= 3.
+If a cancellation was accepted, reservation is removed and remaining slots increased; UI panels reflect the change. If rejected, reservation remains and an explanatory error is shown.
+Class status badge and any admin overrides are consistent with remaining slots/time.
+Helpful testing heuristics / “what‑ifs” to expand coverage (brainstorming)
+
+Inject delays/different latency between UI action and server (or simulate multiple browser tabs) to expose race windows.
+Force partial failures (e.g., client times out after clicking Reserve but server applied it) and verify idempotency / how retries are handled.
+Move the system clock or test exactly at boundary times (start time = now, start time = now +1h) to catch off‑by-one/time comparisons.
+Combine operations: multiple cancels and reserves overlapping with admin edits (change capacity or override Full/Cancelled).
+Explore concurrency from same user (two tabs) vs different users — both can surface different bugs (race on per‑user counters vs global seat counters).
+Verify UI message clarity for rejected concurrent attempts (so user understands why action failed).
+A few constraints from the spec that shape how races appear
+
+The app is client‑side and in‑memory: refreshing the page resets data; concurrency must be simulated across browser sessions (or the backend if present in another implementation). That affects how you simulate multi‑user races.
+Performance requirement: UI updates should complete quickly (<1s) — slow UI refresh can make stale‑view races more likely.
+If you want, I can now:
+
+List ~10 concise high‑impact test scenarios (each a one‑sentence scenario + expected invariant) for immediate execution, or
+Suggest short oracle checks/assertions you can automate to detect these races quickly.
+Which would you prefer?
