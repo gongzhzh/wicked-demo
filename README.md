@@ -1,4 +1,5 @@
 # wicked-demo
+Wicked is a creative assistant who's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions.
 
 ## Prerequisites
 Python 3.11+
