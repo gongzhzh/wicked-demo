@@ -1,5 +1,5 @@
 # wicked-demo
-Wicked is a creative chatbot who's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions.
+WICKED is a creative chatbot that's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions.
 
 ## Prerequisites
 Python 3.11+
