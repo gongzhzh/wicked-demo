@@ -1,59 +1,81 @@
-
 @AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
 
-Nice approach — keeping both panels visible and exercising user switches + cancels + filter/sort is exactly the kind of interaction that exposes UI-state leakage. A few targeted invariants will quickly tell you whether state is stale, and simple precondition checks will cut down on false positives.
+Good — you’re already exercising a rich scenario. Below is a compact checklist of invariants to assert (what must always be true), concrete checks you can run after each action, and practical tips to avoid false alarms. I’ll finish with a divergent test idea and an adversarial challenge to your assumptions.
 
-Key requirements to keep in mind as your ground-truth: filters/sort must only affect view, not data (BR‑12/BR‑13) and the UI must refresh when the active user changes (FR‑21/FR‑28) . Use those as the oracle when you see “odd” behavior.
+Key source requirements to keep in mind while testing:
 
-Invariants to check (what to assert each time you run the scenario)
+The “My Reservations” panel must show only reservations for the active User ID and must refresh when the active user changes, when reservations are created/cancelled, or when class details change .
+Filters/search/ sort affect only the view (not underlying data) and sorting/filtering are deterministic; changing them must reapply both filter and sort to produce a consistent list .
+Cancellations must remove the reservation, increase remaining slots, update status badges, and refresh both panels .
+Filters/search state persists until explicitly changed; sort respects current filters/search .
+Client-side, in-memory app: page refresh resets all data; UI updates should complete within ~1s (so allow for short delays) .
+Invariants to assert (check these after each step in your scenario)
 
-Ownership invariant (single-source of truth for reservations)
-Assert: “My Reservations” shows only reservations whose reservation.userId == activeUserId. Requirement FR‑26 describes this association .
-Test action: switch to user A → record reservations list; switch to user B → ensure A’s reservations disappear; switch back → A’s reservations reappear exactly as before (unless you performed a mutation).
-Capacity conservation (accounting invariant)
-Assert: for each class: capacity == remainingSlots + numberOfActiveReservationsForThatClass (or capacity - remainingSlots == total reservations for that class). FR‑24/FR‑31 describe remaining slots changes on create/cancel and refresh effects .
-Test action: note remainingSlots and reservation counts, cancel a reservation as user who owns it, then verify remainingSlots increments and the counts reconcile.
-Cancel / mutation atomicity
-Assert: after a successful cancel, reservation is removed from My Reservations and remainingSlots + status badges update in Available Classes; and message area shows success. FR‑31 and UI message requirement reference these updates fileciteturn0file5turn0file0.
-Test action: cancel while filters hide that class in Available Classes — verify the change is still applied to the underlying data (see next bullet).
-View-vs-data separation (filters/sort are view-only)
-Assert: changing filters or sort does not change underlying reservation data or capacities (BR‑12); sorting/filtering only changes what is shown (BR‑11/BR‑13) .
-Test action: set a filter so a reserved class is hidden in Available Classes, cancel the reservation from My Reservations, then remove filters and verify capacity/status reflect the cancel.
-Determinism of sort/filtered order
-Assert: for a fixed data set + fixed filter/sort parameters, the displayed order is deterministic (BR‑13/FR‑19/FR‑20) fileciteturn0file2turn0file4.
-Test action: repeatedly toggle the same sort/filter combo and confirm order is stable.
-Permission visibility invariant
-Assert: Admin Panel and admin-only controls are visible only when an admin is active (PM‑1/FR‑33), and admin actions still respect reservation rules when they act as users fileciteturn0file1turn0file3.
-Test action: switch between admin and regular user and verify the Admin Panel appears/disappears and no admin-only control is accessible to regular users.
-Time-related badges & cancel rules
-Assert: status badges (Past / Starting Soon / Upcoming) and cancellation availability follow the time-based rules (BR‑6..BR‑10) .
-Test action: use classes whose times are well outside the 1‑hour boundary and also test close-to-1‑hour cases deliberately (see false-alarm guidance).
-Checks to avoid false alarms (practical heuristics)
+User-scoped invariants
+MyReservations contains only reservations whose reservation.userId == activeUserId. Verify every reservation card’s user association or ID tag. Requirement: FR-26 .
+When you switch active user, MyReservations is replaced with that user’s reservations (no remnants from previous user).
+2. Cancellation invariants
 
-Always verify the active-user label before asserting ownership: FR‑1/FR‑3 requires the UI to show the current user/role — double-check that label matches the user you think you set; otherwise you’re testing the wrong actor .
-Compare against an unfiltered baseline: if you suspect a leak when a filter is active, reset filters (or capture an “all” view) and recheck invariants; a hidden item is not a leak — it’s a filter doing its job (BR‑12/FR‑17) .
-Control time or avoid boundary timings: many behaviors are time-dependent (status badges, cancel windows). Use class times far from “starting soon” unless you’re explicitly testing those rules; this reduces flaky failures from slight clock differences (BR‑9, BR‑6..BR‑7) .
-Use deterministic test data and repeatable sequences: run the same sequence twice (switch A→B→A, cancel, flip filter/sort repeatedly) to distinguish race conditions from deterministic logic (BR‑13/FR‑19) fileciteturn0file2turn0file4.
-Check both UI and underlying aggregates: if possible, expose/inspect any in-memory data structures (or add a debug dump) to confirm the UI matches the model. The system is client-only / in-memory (C‑1/C‑2), so the “truth” is local and inspectable fileciteturn0file1turn0file6.
-Watch for UI caching/reuse of DOM nodes: when panels are kept visible, the view layer may reuse DOM elements. If a node is reused, compare element IDs/keys (or text content) rather than relying only on visual position.
-Make sure asynchronous updates have completed: if the app updates in <1s per NFR‑4, wait that interval (or wait for the success message) before flipping filters/sort to avoid transient states being mistaken for leaks .
-Quick checklist you can run each scenario (short, actionable)
+After a successful cancel: reservation is removed from MyReservations, the class.remainingSlots increases by 1, and class status recalculated (e.g., Full → Available). Requirement: FR-31 and FR-24 .
+Cancellation must be rejected for past classes or within 1 hour (if rejection occurs, UI shows an explicit error and nothing changes) .
+3. View/filter/sort invariants
 
-Precondition: record activeUserLabel, filters, sort, and a baseline unfiltered list. (FR‑1, FR‑17) fileciteturn0file6turn0file4
-Action: perform cancel as user A (or switch users, then cancel).
-Immediately assert:
-reservation removed from My Reservations for activeUserLabel (FR‑26)
-remainingSlots for that class incremented and status badge updated (FR‑24/FR‑31)
-Admin panel visibility matches role (if switching) (FR‑33/PM‑1) fileciteturn0file3turn0file1
-Flip filters/sort and re-assert the same data-level invariants (capacity reconciliation, reservation ownership).
-Remove filters and compare to baseline to confirm no hidden leakage.
-Repeat sequence quickly and with small waits to surface timing/race issues.
-Cross-domain hint (useful mindset)
+Filters and search do not mutate underlying reservation/class data: they only affect what’s shown (BR-12) .
+After you flip filters or change sort order, the visible lists must match what you would compute by applying the same filter+sort to the canonical dataset (deterministic ordering required) .
+If a cancellation made a class become Available, it must appear in “Available Classes” according to current filters/sort rules (FR-20/FR-21) .
+4. Data consistency invariants
 
-Think of capacity/reservation as an accounting ledger: debits (reserve) and credits (cancel) must balance. That conservation law is a strong invariant to catch leaks or lost updates.
-Treat filters/sort like a view-layer cache: if something changes under a cached view, either the cache must be invalidated/refreshed or you’ll see stale UI — assert that refresh is triggered on mutation or user-switch (FR‑20/FR‑21) .
+remainingSlots must never go negative and must equal capacity − count(reservations for that class) at all times (NFR-7, FR-24) .
+Business rules like max 3 future reservations, no double-booking, etc., must hold after any operation (BR-3, BR-4) .
+Concrete checks / test steps (minimal reproducible sequence)
+
+Baseline snapshot
+Capture: activeUserId, MyReservations list (IDs+classIDs+timestamps), AvailableClasses list (IDs, remainingSlots, status badges), current filters and sort settings, UI message area text.
+2. Perform the action sequence you described:
+
+Keep both panels visible.
+Set user = alice (regular), create/confirm a reservation X for class A.
+Set user = bob (admin or normal) — observe MyReservations updates (should not show X).
+As bob, perform a Cancel (or if you mean cancel while switching, follow your exact flow).
+Immediately flip filters and change sort.
+3. Post-action snapshot
+
+Re-capture the same fields as baseline.
+4. Assertions
+
+Reservation X no longer appears in any MyReservations (unless the active user is the owner and cancellation was rejected for legitimate rule).
+Class A.remainingSlots increased by 1 and status badge updated if needed.
+AvailableClasses list post-filter/sort is exactly the deterministic sorted/filtered view of the canonical dataset.
+No reservations from the previously active user remain visible when activeUserId is different.
+UI message area shows the success or rejection message for the cancel action.
+How to avoid false alarms (common pitfalls and mitigations)
+
+Timing: UI updates are expected to be fast but may take up to NFR-4’s 1s. Wait a small grace interval (e.g., 1–1.5s) before asserting. The app is in-memory (no backend), so transient network latency is not a factor, but rendering or event-loop scheduling may delay updates .
+Filters hiding results: a reservation may be “missing” because current filters hide its class. When you see a missing item, first clear filters/search and re-check.
+Deterministic sort: compare canonical sets (IDs) rather than visual index positions to avoid false positives from sort-order changes; requirement guarantees deterministic ordering for same parameters .
+Cancellation failure vs. stale UI: if cancel is rejected by business rules, the UI should show a rejection message — treat that as expected behavior, not a leak. Check the message area and console for error messages .
+State reset on page reload: remember that a full page refresh resets all data (so don’t mix refreshes into the same test session) .
+Automation tips (if you automate checks)
+
+Compare canonical object IDs and numeric counts rather than rendered text.
+Read in-memory data structures (if available via devtools or exposed test hooks) and assert invariants there; this avoids rendering/flakiness.
+If you must compare the DOM, normalize timestamps and strip transient message text before comparison.
+Use explicit waits for the “success” message or for a stable DOM snapshot (instead of blind timeouts).
+Divergent (reframing) suggestion — try the opposite hypothesis
+
+Instead of assuming the stale state is caused by the view not refreshing, assume it’s caused by shared mutable data (global variables or event listeners) that incorrectly map reservations to the wrong user. Test this by creating two reservations for different users with easily distinguishable IDs, then switch roles rapidly and check whether the class.remainingSlots and reservation.userId mapping ever diverge. Also try running the exact sequence in two separate browser windows (same page) to see if cross-window/global leakage occurs.
+Adversarial feedback — challenge your current view
+
+Counterarguments to “it’s a stale-state leak”:
+The UI might be intentionally hiding results due to active filters (not leaking state).
+The cancellation could have been rejected by a business rule (e.g., too late), so no state change should occur.
+You may be observing a rendering delay rather than stale memory; waiting briefly or checking the in-memory model can disambiguate.
+Quick questions to justify the leak hypothesis:
+What exact symptom makes you call it a “leak”? (e.g., wrong reservation owner shown, remainingSlots not matching count, or duplicate reservation)
+Do you see success/failure messages in the message area when you cancel?
+Do console errors appear when switching users or manipulating filters? Answering these will help narrow whether you need to chase a UI-render bug, a business-rule rejection, or a true memory leak/state-misassociation.
 If you want, I can:
 
-Give a short table of concrete assertions you can paste into an automated test harness (e.g., “assert reservationList.filter(r => r.user==activeUser).length == displayedRows”), or
-Generate a small deterministic scenario (specific class times, capacities, and a step-by-step script) you can run manually or automate.
-Which would help you most next?
+Produce a short, automated test script (pseudo-code) that performs your exact sequence and asserts the invariants above, or
+Help you design a minimal repro (data setup + steps + expected vs actual) so you can file a clear bug report.
+Which do you prefer?
