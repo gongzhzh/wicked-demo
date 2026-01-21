@@ -1,0 +1,85 @@
+@AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
+
+Nice test idea — keeping both panels visible and exercising user switches + cancel + filter/sort flips is exactly the kind of interaction that surfaces UI caching/leak bugs. Below I list concrete invariants to assert, how to observe them (practical checks), and ways to avoid false positives.
+
+Quick grounding from the spec
+
+“My Reservations” must reflect the active User ID and update when the active user changes (FR-26, FR-28) .
+Filters/sorting are view-only and must not change underlying data; they must produce deterministic order for the same parameters (BR-12, BR-13, FR-11/FR-20) .
+When a cancellation is accepted the reservation is removed, remaining slots incremented, and both panels refresh (FR-31, FR-24) .
+Admin-only UI must only be visible/active when an admin is set (PM-3/PM-4, FR-33) .
+The app is client-only, in-memory, and relies on the client clock for “past/future” computations (C-1, C-2, C-3) — helpful because you can inspect memory and control timings in tests .
+Invariants to check (assertions you can automate)
+
+Current-user binding
+
+Invariant: After Set User completes, “My Reservations” shows exactly the reservations whose User ID == currentUser. No reservations for any other user appear. (Spec: FR-26, FR-28)
+How to check: snapshot the reservations displayed and compare to the in-memory reservations array filtered by currentUser.
+Cancellation propagation
+
+Invariant: After a cancellation completes, (a) that reservation is gone from My Reservations, (b) the matching class remainingSlots increased by 1, and (c) status badge(s) updated in Available Classes if needed. (Spec: FR-31, FR-24)
+How to check: record pre-cancel remainingSlots and reservation list, then re-check both after action.
+View vs model consistency
+
+Invariant: UI lists (Available Classes, My Reservations) are consistent with the authoritative in-memory model (classes[], reservations[]). No mismatch where UI shows a removed/added reservation that the model does not. (NFR-6 data consistency)
+How to check: compare DOM representation to serialized in-memory arrays.
+Filters/sort are view-only and deterministic
+
+Invariant: Applying or flipping filters/sort changes only ordering/visibility, not underlying class/reservation data. Re-applying same params yields same ordering. (BR-12, BR-13, FR-20)
+How to check: capture a model snapshot, apply different view permutations, assert model unchanged; apply same parameters twice and assert order identical.
+Role-based UI elements
+
+Invariant: Admin controls appear only when role == admin and are disabled/hidden otherwise. Admin actions must check authentication before applying changes. (PM-3/4, FR-33)
+How to check: toggle roles and assert presence/absence of Admin panel and that admin-only actions are rejected when role not admin.
+Action enablement rules
+
+Invariant: Reserve/Cancel controls enabled/disabled exactly per rules (e.g., no cancel for past classes or within 1 hour). (BR-6, BR-7, FR-22, FR-29)
+How to check: verify button enabled state vs computed business rule for that item.
+Timing / responsiveness constraints
+
+Invariant: UI updates complete within acceptable latency (NFR-4: ~1s). If update takes longer, log it as a performance issue rather than stale-state bug.
+Practical checks to catch a “state leak” specifically when switching users + flipping filters/sort
+
+Before any action: snapshot
+currentUser, currentRole, filters, sortKey, classes[], reservations[] (model), DOM snapshots of both panels, message area text (UI-3)
+Perform: setUser(admin or normal) → observe that My Reservations refreshes (FR-28)
+Create or cancel a reservation as user A, immediately switch to user B and flip filter/sort combinations and assert:
+User B’s My Reservations did not briefly show user A’s reservations.
+Available Classes’ remainingSlots reflect latest model (no temporary stale slot counts).
+After cancel + view flips: re-check model equality and that message area shows success/failure (FR-31, UI-3)
+How to avoid false alarms (common causes and mitigations)
+
+Wait for canonical completion, don’t assert immediately
+
+The UI is expected to update; allow for the specified UI latency (NFR-4). Add a small wait (or wait for an explicit success message) before checking UI. Otherwise you’ll catch transient states that are just in-flight updates .
+Distinguish optimistic UI vs eventual consistency
+
+If the app uses optimistic updates, the UI might temporarily reflect an action before model finalization. The spec describes in-memory client behavior, so treat the in-memory model as authoritative; check it as well (C-1/C-2) .
+Time-dependent labels/status
+
+Statuses change with client clock (past/starting soon). Use test data with times far enough in future or freeze/patch the client clock to avoid spurious “starting soon” transitions during the test (C-3) .
+Filters/sort re-application
+
+Changing filters/sort triggers re-application of the same logic (FR-20). If you flip filters immediately after an action you must re-evaluate both view and model after the re-application completes; otherwise you may see an intermediate ordered list that looks wrong but is simply being recomputed .
+Role/visibility race
+
+When switching roles, the app must hide/show admin UI. Wait for the admin panel to be fully mounted/unmounted (check DOM presence) before asserting admin-only state (FR-33, PM-3/4) .
+Instrumentation suggestions (variables and signals to inspect)
+
+currentUser, currentRole (label on UI) — must match Set User input (UI-1)
+reservations[] and classes[] in memory — compare to DOM
+remainingSlots on each class and the sum of reserved seats for sanity checks (NFR-6)
+filters state, sortKey — reapply deterministically and assert order (FR-19/FR-20)
+message area content for success/error notifications (UI-3)
+Test patterns / recipes
+
+Snapshot-Assert-Flip: snapshot model + DOM → perform action (cancel) → wait for success message or timeout → flip filters/sort → re-capture snapshot → assert model==expected and DOM==model-derived view.
+Identity-Switch Stress: create reservations under User A, switch to User B, flip filters/sorts rapidly, switch back to A, assert that A’s reservations are intact and B never saw A’s reservations.
+Interleaved Admin Edits: with admin role visible, edit class capacity then switch to normal user and assert available panel shows new capacity and My Reservations reflects any impacted reservations (FR-39) .
+Cross-domain hint: think of “role switch” like invalidating a cache key — when currentUser or role changes you should treat any derived views (filtered lists, enabled controls) as invalidated and fully recomputed from the model. In practice, assert that your UI does a full recompute when those keys change.
+
+If you want, I can:
+
+Produce a short automated test checklist (steps + exact assertions and tolerances) you can plug into your test harness; or
+Draft small JS console snippets to dump reservations[] / classes[] / currentUser to help triage leaks.
+Which would you prefer?
