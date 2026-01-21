@@ -1,54 +1,59 @@
 
 @AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
 
-Good setup — keeping both panels visible and switching users is exactly the kind of real-world interaction that exposes stale-state bugs. A few concerns about your reasoning and some things you haven’t spelled out that will change what “invariant” even means here.
+Nice approach — keeping both panels visible and exercising user switches + cancels + filter/sort is exactly the kind of interaction that exposes UI-state leakage. A few targeted invariants will quickly tell you whether state is stale, and simple precondition checks will cut down on false positives.
 
-What you’re implicitly assuming (and why that’s risky)
+Key requirements to keep in mind as your ground-truth: filters/sort must only affect view, not data (BR‑12/BR‑13) and the UI must refresh when the active user changes (FR‑21/FR‑28) . Use those as the oracle when you see “odd” behavior.
 
-You haven’t defined the canonical “reservation state.” Are you checking UI selection flags, a client-side cache, the latest server model, or the DB row? Each has different semantics and allowed delays. Without that, “leak” is ambiguous.
-You’re assuming cancel is synchronous and immediately authoritative. If cancellation is processed async (background jobs, eventual consistency, or queued workflows) then a transient “stale” view is expected and not a bug.
-You assume filters/sorts always cause a fresh fetch. If the UI sometimes reuses an in-memory list and only re-filters client-side, flipping filters won’t surface server-side changes.
-You seem to assume both panels are independent views. If they share the same client state store, differences could be intentional (single source updates) or accidental (shared mutable state), and the correct behavior depends on product rules.
-You assume unique sort & filter results. Sorting by non-unique keys makes order non-deterministic, which can look like leakage when items simply change positions.
-Important architectural questions you haven’t answered (these change what invariants are meaningful)
+Invariants to check (what to assert each time you run the scenario)
 
-Is the authoritative model on the server, and does the UI re-query the server on relevant actions?
-Is cancellation soft-delete or a state transition? Are there lifecycle stages that are valid to see temporarily?
-Are updates pushed (websocket/stream) or polled? Is there guaranteed ordering of updates?
-Do the two panels belong to the same user session/process or to different client sessions on the same page?
-Are there caches (HTTP caches, in-memory client caches, read replicas) that introduce replication lag?
-Ways your current approach can create false alarms (so you don’t mislabel expected behavior as bugs)
+Ownership invariant (single-source of truth for reservations)
+Assert: “My Reservations” shows only reservations whose reservation.userId == activeUserId. Requirement FR‑26 describes this association .
+Test action: switch to user A → record reservations list; switch to user B → ensure A’s reservations disappear; switch back → A’s reservations reappear exactly as before (unless you performed a mutation).
+Capacity conservation (accounting invariant)
+Assert: for each class: capacity == remainingSlots + numberOfActiveReservationsForThatClass (or capacity - remainingSlots == total reservations for that class). FR‑24/FR‑31 describe remaining slots changes on create/cancel and refresh effects .
+Test action: note remainingSlots and reservation counts, cancel a reservation as user who owns it, then verify remainingSlots increments and the counts reconcile.
+Cancel / mutation atomicity
+Assert: after a successful cancel, reservation is removed from My Reservations and remainingSlots + status badges update in Available Classes; and message area shows success. FR‑31 and UI message requirement reference these updates fileciteturn0file5turn0file0.
+Test action: cancel while filters hide that class in Available Classes — verify the change is still applied to the underlying data (see next bullet).
+View-vs-data separation (filters/sort are view-only)
+Assert: changing filters or sort does not change underlying reservation data or capacities (BR‑12); sorting/filtering only changes what is shown (BR‑11/BR‑13) .
+Test action: set a filter so a reserved class is hidden in Available Classes, cancel the reservation from My Reservations, then remove filters and verify capacity/status reflect the cancel.
+Determinism of sort/filtered order
+Assert: for a fixed data set + fixed filter/sort parameters, the displayed order is deterministic (BR‑13/FR‑19/FR‑20) fileciteturn0file2turn0file4.
+Test action: repeatedly toggle the same sort/filter combo and confirm order is stable.
+Permission visibility invariant
+Assert: Admin Panel and admin-only controls are visible only when an admin is active (PM‑1/FR‑33), and admin actions still respect reservation rules when they act as users fileciteturn0file1turn0file3.
+Test action: switch between admin and regular user and verify the Admin Panel appears/disappears and no admin-only control is accessible to regular users.
+Time-related badges & cancel rules
+Assert: status badges (Past / Starting Soon / Upcoming) and cancellation availability follow the time-based rules (BR‑6..BR‑10) .
+Test action: use classes whose times are well outside the 1‑hour boundary and also test close-to-1‑hour cases deliberately (see false-alarm guidance).
+Checks to avoid false alarms (practical heuristics)
 
-Optimistic UI updates: the UI might show a canceled state immediately while backend is still reconciling — appears stale if backend later rejects.
-Eventual consistency / replication lag: read replicas or async jobs can serve older state briefly.
-Out‑of‑order push notifications: websockets delivering updates in a different order than actions produce perceived inconsistencies.
-Non-deterministic sorting: items moving due to tie-breaking, not because state changed.
-Shared client state: both panels reading/writing the same store can mask whether the server was updated.
-Test environment instability: parallel test runs or external actors changing data create noise.
-Things you haven’t considered that will affect what invariants you should even attempt to assert
+Always verify the active-user label before asserting ownership: FR‑1/FR‑3 requires the UI to show the current user/role — double-check that label matches the user you think you set; otherwise you’re testing the wrong actor .
+Compare against an unfiltered baseline: if you suspect a leak when a filter is active, reset filters (or capture an “all” view) and recheck invariants; a hidden item is not a leak — it’s a filter doing its job (BR‑12/FR‑17) .
+Control time or avoid boundary timings: many behaviors are time-dependent (status badges, cancel windows). Use class times far from “starting soon” unless you’re explicitly testing those rules; this reduces flaky failures from slight clock differences (BR‑9, BR‑6..BR‑7) .
+Use deterministic test data and repeatable sequences: run the same sequence twice (switch A→B→A, cancel, flip filter/sort repeatedly) to distinguish race conditions from deterministic logic (BR‑13/FR‑19) fileciteturn0file2turn0file4.
+Check both UI and underlying aggregates: if possible, expose/inspect any in-memory data structures (or add a debug dump) to confirm the UI matches the model. The system is client-only / in-memory (C‑1/C‑2), so the “truth” is local and inspectable fileciteturn0file1turn0file6.
+Watch for UI caching/reuse of DOM nodes: when panels are kept visible, the view layer may reuse DOM elements. If a node is reused, compare element IDs/keys (or text content) rather than relying only on visual position.
+Make sure asynchronous updates have completed: if the app updates in <1s per NFR‑4, wait that interval (or wait for the success message) before flipping filters/sort to avoid transient states being mistaken for leaks .
+Quick checklist you can run each scenario (short, actionable)
 
-A tolerance window: if the system is eventually consistent, the invariant must allow a convergence time instead of requiring instantaneous equality.
-Distinguishing “transient pending state” vs “stale persisted state.” The UI should be able to represent pending operations explicitly; otherwise checks will misclassify pending as stale.
-The granularity of identity and versioning: if objects carry version/ETag/timestamp then checking those is more deterministic than comparing full rendered lists.
-Sort stability: if you don’t use a unique, stable key for ordering, list diffs are noisy.
-High-level conceptual constraints you should define before selecting invariants
+Precondition: record activeUserLabel, filters, sort, and a baseline unfiltered list. (FR‑1, FR‑17) fileciteturn0file6turn0file4
+Action: perform cancel as user A (or switch users, then cancel).
+Immediately assert:
+reservation removed from My Reservations for activeUserLabel (FR‑26)
+remainingSlots for that class incremented and status badge updated (FR‑24/FR‑31)
+Admin panel visibility matches role (if switching) (FR‑33/PM‑1) fileciteturn0file3turn0file1
+Flip filters/sort and re-assert the same data-level invariants (capacity reconciliation, reservation ownership).
+Remove filters and compare to baseline to confirm no hidden leakage.
+Repeat sequence quickly and with small waits to surface timing/race issues.
+Cross-domain hint (useful mindset)
 
-Define the authoritative truth (server vs client cache) and the allowed propagation window.
-Define what “leak” means: visibility of another user’s reservation in a panel that should never show it, vs temporary discrepancy while an action is in-flight.
-Decide whether invariants must hold immediately or after eventual convergence.
-Decide whether ordering differences are significant or acceptable.
-Avoiding false alarms (conceptual ideas, not a checklist)
+Think of capacity/reservation as an accounting ledger: debits (reserve) and credits (cancel) must balance. That conservation law is a strong invariant to catch leaks or lost updates.
+Treat filters/sort like a view-layer cache: if something changes under a cached view, either the cache must be invalidated/refreshed or you’ll see stale UI — assert that refresh is triggered on mutation or user-switch (FR‑20/FR‑21) .
+If you want, I can:
 
-Require a canonical source/version when asserting equality: comparisons that involve server-provided version/ETag/timestamp are less brittle than comparing rendered lists.
-Treat pending operations differently from committed state — your notion of “stale” should exclude items known to be pending.
-Be explicit about tolerances for replication/processing lag; anything faster than those tolerances is meaningful, slower is not.
-Use unique stable keys for sorting so reorderings aren’t mistaken for leaks.
-If panels share client state, question whether divergence is a bug or expected and make that policy explicit.
-Questions to answer before you write concrete checks
-
-Is cancellation guaranteed to be committed synchronously? If not, what’s the maximum expected latency?
-Do the panels fetch fresh data on filter/sort changes, or do they re-filter local state?
-Are updates pushed to all clients? If yes, is ordering guaranteed?
-Are admin and normal user views supposed to be isolated at the server level (i.e., server enforces visibility), or is visibility purely client-side?
-If you refine the above assumptions and answer the architecture questions, you’ll be able to pick invariants that are meaningful rather than brittle. If you want, tell me the answers to the architecture questions (synchronous vs async, shared state vs independent, push vs poll, sort key policy), and I’ll point out which of your current invariants are unrealistic or likely to generate false positives.
-
+Give a short table of concrete assertions you can paste into an automated test harness (e.g., “assert reservationList.filter(r => r.user==activeUser).length == displayedRows”), or
+Generate a small deterministic scenario (specific class times, capacities, and a step-by-step script) you can run manually or automate.
+Which would help you most next?
