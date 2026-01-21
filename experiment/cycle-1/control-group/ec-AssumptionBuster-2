@@ -1,85 +1,70 @@
 @AssumptionBuster I’m keeping both panels visible, switching users (admin and normal user) around and do cancel then flip filters and sort to see if reservation state leaks. What invariants should I check to confirm whether any stale state is persisting and how can I avoid false alarms?
 
-Nice test idea — keeping both panels visible and exercising user switches + cancel + filter/sort flips is exactly the kind of interaction that surfaces UI caching/leak bugs. Below I list concrete invariants to assert, how to observe them (practical checks), and ways to avoid false positives.
+Good scope — you’re already exercising the likely leak-path (two visible panels + role switches + UI transforms). Below I give a compact checklist of concrete invariants to assert, practical test steps (so you can reproduce reliably), tips to avoid false positives, an exploratory (divergent) test angle to try, and an adversarial challenge you can use to sharpen the test.
 
-Quick grounding from the spec
+Key requirements to ground these checks
 
-“My Reservations” must reflect the active User ID and update when the active user changes (FR-26, FR-28) .
-Filters/sorting are view-only and must not change underlying data; they must produce deterministic order for the same parameters (BR-12, BR-13, FR-11/FR-20) .
-When a cancellation is accepted the reservation is removed, remaining slots incremented, and both panels refresh (FR-31, FR-24) .
-Admin-only UI must only be visible/active when an admin is set (PM-3/PM-4, FR-33) .
-The app is client-only, in-memory, and relies on the client clock for “past/future” computations (C-1, C-2, C-3) — helpful because you can inspect memory and control timings in tests .
-Invariants to check (assertions you can automate)
+The “My Reservations” panel must show only reservations for the active User ID and must refresh when the active user changes .
+Filters/sorts are view-only (must not modify underlying data) and must produce deterministic results for the same parameters .
+When a cancellation is accepted the reservation is removed, the class remaining slots increase by 1, and both panels refresh to reflect the change .
+The app is single-page and runs in-memory (so state lives client-side; a page reload resets data) — use that to your advantage for clean setup/teardown .
+Invariants to check (things that must always be true)
 
-Current-user binding
+User-scoped reservation invariants
 
-Invariant: After Set User completes, “My Reservations” shows exactly the reservations whose User ID == currentUser. No reservations for any other user appear. (Spec: FR-26, FR-28)
-How to check: snapshot the reservations displayed and compare to the in-memory reservations array filtered by currentUser.
-Cancellation propagation
+My Reservations contains exactly the set of reservations with userId == activeUserId. No reservation for a previous user should be visible after Set User / Role. (FR-26)
+The Cancel action only affects reservations that belong to the active user; cancel should be disabled or rejected for other users (BR-8)
+Capacity / class state invariants
 
-Invariant: After a cancellation completes, (a) that reservation is gone from My Reservations, (b) the matching class remainingSlots increased by 1, and (c) status badge(s) updated in Available Classes if needed. (Spec: FR-31, FR-24)
-How to check: record pre-cancel remainingSlots and reservation list, then re-check both after action.
-View vs model consistency
+After a successful cancel: class.remainingSlots increases by 1 and class.status is recalculated (e.g., Full→Available) and reflected in Available Classes. (FR-31, FR-24)
+remainingSlots never becomes negative (NFR-7)
+View consistency invariants
 
-Invariant: UI lists (Available Classes, My Reservations) are consistent with the authoritative in-memory model (classes[], reservations[]). No mismatch where UI shows a removed/added reservation that the model does not. (NFR-6 data consistency)
-How to check: compare DOM representation to serialized in-memory arrays.
-Filters/sort are view-only and deterministic
+Changing filters or sort re-applies both and does not mutate reservation data (BR-12, BR-13). The view must be consistent with the active filter+sort parameters (FR-20/21)
+Admin panel visibility strictly follows role (only visible when admin authenticated) (BR-14)
+Timing / refresh invariants
 
-Invariant: Applying or flipping filters/sort changes only ordering/visibility, not underlying class/reservation data. Re-applying same params yields same ordering. (BR-12, BR-13, FR-20)
-How to check: capture a model snapshot, apply different view permutations, assert model unchanged; apply same parameters twice and assert order identical.
-Role-based UI elements
+UI updates (reserve/cancel/filter/sort/admin edits) must complete within the expected delay (the spec expects quick updates), so tests should allow for brief update windows rather than immediately failing (NFR-4)
+Concrete test steps (minimal, repeatable scenario)
 
-Invariant: Admin controls appear only when role == admin and are disabled/hidden otherwise. Admin actions must check authentication before applying changes. (PM-3/4, FR-33)
-How to check: toggle roles and assert presence/absence of Admin panel and that admin-only actions are rejected when role not admin.
-Action enablement rules
+Setup
+Start with a clean in-memory state (reload page). Use unique test User IDs (userA, userB) and known test class IDs where capacity is > 0.
+Baseline capture
+As userA: reserve class X. Record: MyReservations list, AvailableClasses.remainingSlots for X, status badge.
+Switch role
+Set User → userB (regular). Assert MyReservations shows only userB reservations (empty unless you create one), and that class X.remainingSlots has the decremented value visible in AvailableClasses. (FR-26, FR-24)
+Reproduce the candidate leak
+While both panels visible, do: cancel (as userA) — for the bug you described you may need to simulate switching back and forth: a) Immediately flip filters (change type/instructor) and sort (asc/desc) after pressing Cancel, or b) Change the active user to admin and back, then reapply filters/sort.
+After UI settles, assert: MyReservations for active user contains the correct set; remainingSlots for class X equals baseline +1 if the cancel succeeded.
+Cross-checks (to reduce false positives)
+Check the in-memory model (if you have access to a JS console hook) or API of the SPA rather than only DOM text. The persistent model should match the UI.
+Reload the page: page reload must reflect the in-memory reset behaviour (if you re-created state intentionally, re-run setup) — because data is client-only C-1/C-2, reload is a deterministic reset to clear transient caches
+What to capture/assert (evidence)
 
-Invariant: Reserve/Cancel controls enabled/disabled exactly per rules (e.g., no cancel for past classes or within 1 hour). (BR-6, BR-7, FR-22, FR-29)
-How to check: verify button enabled state vs computed business rule for that item.
-Timing / responsiveness constraints
+Before/after screenshots of both panels, plus a small JSON snapshot of the in-memory reservations and class objects (class id, remainingSlots, reservation.userId, reservation.id).
+Timestamps of actions and time spent between action and UI change (to tolerate the allowed UI update latency). NFR says interactions should complete quickly — allow a small wait (e.g., up to 1s) before failing .
+Console logs or application state dumps (if available) showing the removal of the reservation and the slot increment.
+How to avoid false alarms
 
-Invariant: UI updates complete within acceptable latency (NFR-4: ~1s). If update takes longer, log it as a performance issue rather than stale-state bug.
-Practical checks to catch a “state leak” specifically when switching users + flipping filters/sort
+Deterministic test data: use unique User IDs and classes so you can identify cross-user leaks (no “shared” names).
+Wait for the UI to finish updating: the spec expects quick responses but not instantaneous — use an explicit wait or poll for the invariants up to a small timeout (e.g., 1s) rather than asserting immediately (NFR-4) .
+Compare model vs view: prefer asserting the app’s in-memory model or data structures when possible (less flaky than text scraping). Because this app is client-only, you can often access the model in the console or add a debug hook for tests (C-1/C-2) .
+Reset filters/sorts before a new scenario unless you’re explicitly testing filter persistence (FR-17 says filters maintain state until changed) — that avoids confusion where a reservation is hidden by filters, not leaked .
+Separate functional failures from UI rendering artifacts: e.g., if a reservation is removed in the model but the DOM lingers for a render frame, that’s a UI-timing artifact, not a data leak.
+Edge/race conditions to try (these are common leak triggers)
 
-Before any action: snapshot
-currentUser, currentRole, filters, sortKey, classes[], reservations[] (model), DOM snapshots of both panels, message area text (UI-3)
-Perform: setUser(admin or normal) → observe that My Reservations refreshes (FR-28)
-Create or cancel a reservation as user A, immediately switch to user B and flip filter/sort combinations and assert:
-User B’s My Reservations did not briefly show user A’s reservations.
-Available Classes’ remainingSlots reflect latest model (no temporary stale slot counts).
-After cancel + view flips: re-check model equality and that message area shows success/failure (FR-31, UI-3)
-How to avoid false alarms (common causes and mitigations)
+Cancel, then immediately change active user and flip filters/sort before the cancel promise resolves. Look for inconsistent state once async updates complete.
+Admin edits class capacity/status while a normal user is viewing and with filters applied. Edits should propagate to both panels (FR-39) .
+Rapidly toggle sort/filter repeatedly after cancel to see stale rendering under rapid reflows (tests for idempotence/determinism of filtering/sort BR-11/BR-13) .
+Divergent exploratory question (reframe / new angle)
 
-Wait for canonical completion, don’t assert immediately
+Instead of switching the single active user, what if you simulated two independent views (e.g., two browser windows: one logged in as admin, one as a normal user) and performed cancel/reserve/sort/filter actions concurrently? Would the in-memory-only design cause conflicting local state or apparent leaks when you swap focus between windows? (This diverges from your single-page single-view approach and may reveal assumptions about single-session state.)
+Adversarial feedback / challenge (push back on assumptions)
 
-The UI is expected to update; allow for the specified UI latency (NFR-4). Add a small wait (or wait for an explicit success message) before checking UI. Otherwise you’ll catch transient states that are just in-flight updates .
-Distinguish optimistic UI vs eventual consistency
-
-If the app uses optimistic updates, the UI might temporarily reflect an action before model finalization. The spec describes in-memory client behavior, so treat the in-memory model as authoritative; check it as well (C-1/C-2) .
-Time-dependent labels/status
-
-Statuses change with client clock (past/starting soon). Use test data with times far enough in future or freeze/patch the client clock to avoid spurious “starting soon” transitions during the test (C-3) .
-Filters/sort re-application
-
-Changing filters/sort triggers re-application of the same logic (FR-20). If you flip filters immediately after an action you must re-evaluate both view and model after the re-application completes; otherwise you may see an intermediate ordered list that looks wrong but is simply being recomputed .
-Role/visibility race
-
-When switching roles, the app must hide/show admin UI. Wait for the admin panel to be fully mounted/unmounted (check DOM presence) before asserting admin-only state (FR-33, PM-3/4) .
-Instrumentation suggestions (variables and signals to inspect)
-
-currentUser, currentRole (label on UI) — must match Set User input (UI-1)
-reservations[] and classes[] in memory — compare to DOM
-remainingSlots on each class and the sum of reserved seats for sanity checks (NFR-6)
-filters state, sortKey — reapply deterministically and assert order (FR-19/FR-20)
-message area content for success/error notifications (UI-3)
-Test patterns / recipes
-
-Snapshot-Assert-Flip: snapshot model + DOM → perform action (cancel) → wait for success message or timeout → flip filters/sort → re-capture snapshot → assert model==expected and DOM==model-derived view.
-Identity-Switch Stress: create reservations under User A, switch to User B, flip filters/sorts rapidly, switch back to A, assert that A’s reservations are intact and B never saw A’s reservations.
-Interleaved Admin Edits: with admin role visible, edit class capacity then switch to normal user and assert available panel shows new capacity and My Reservations reflects any impacted reservations (FR-39) .
-Cross-domain hint: think of “role switch” like invalidating a cache key — when currentUser or role changes you should treat any derived views (filtered lists, enabled controls) as invalidated and fully recomputed from the model. In practice, assert that your UI does a full recompute when those keys change.
-
+Counterpoints to the hypothesis “visible panel + flip filters → leak”: it could be (a) a rendering/timing artifact where the model was updated but the DOM wasn’t yet re-rendered, (b) filters hiding/showing elements making it look like state moved, or (c) admin UI elements revealing data that are actually correct for admin (not a leak). Can you show model-level evidence (not just screenshots) that the reservation object still exists after cancel? If not, prioritize capturing the app’s internal data snapshot as evidence.
+Please justify: why do you assume the leak occurs only when both panels are visible? Could hidden-panel behaviour differ (e.g., stale virtual DOM nodes) — test both visible and hidden to be sure.
 If you want, I can:
 
-Produce a short automated test checklist (steps + exact assertions and tolerances) you can plug into your test harness; or
-Draft small JS console snippets to dump reservations[] / classes[] / currentUser to help triage leaks.
-Which would you prefer?
+produce a compact test script (step-by-step) you can paste into a test runner (Puppeteer / Playwright) that checks the invariants and captures model snapshots; or
+suggest exact assertions and wait strategies (polling interval + timeout) for your automation.
+Which would you prefer — a manual checklist you can copy into your test case management system, or an executable Playwright/Puppeteer skeleton that implements these checks?
