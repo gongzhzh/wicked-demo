@@ -6,7 +6,7 @@ WICKED is a creativity-supporting chatbot that's devoted to helping testers be m
 **Abstract:**  
 We build a multi-agent LLM chatbot to support creativity in exploratory testing by encouraging divergent and critical thinking. Two agents (Brainstormer and Assumption Buster) use creativity-support communication patterns. Scripted dialogue assessments show that targeted system instructions and web retrieval improve both the strength and consistency of these behaviors versus a baseline. Human-centric evaluation is next.
 
-
+🔁 Reproduction: see [`experiments/`](experiments/README.md) (or `scripts/`)
 
 # Installation
 ## Prerequisites
