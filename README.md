@@ -1,13 +1,12 @@
-# <Your Experimental Application Name>
+# WICKED
+WICKED is a creativity-supporting chatbot that's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions. 
 
 > Research codebase for our exploratory testing study (Cycle 1 complete; Cycle 2 ongoing).
-> This repository contains the experimental application and supporting scripts used in the research evaluation.
+> This repository contains the experimental application and data used in the research evaluation.
 
 📄 Manuscript & abstract: see [`paper/`](paper/README.md)  
-🔁 Reproduction: see [`experiments/`](experiments/README.md) (or `scripts/`)
+🔁 Reproduction: see [`experiments/`](experiments/README.md) 
 
-# wicked-demo
-WICKED is a creativity-supporting chatbot that's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions. 
 
 ## Prerequisites
 Python 3.11+
