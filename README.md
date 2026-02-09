@@ -40,7 +40,7 @@ uv pip install -r requirements.txt
 Rename the .env.example file to .env
 
 
-## Executing the scripts
+### 6. Executing the scripts
 
 - Open a terminal in VS Code
 
