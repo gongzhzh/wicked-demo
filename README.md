@@ -1,11 +1,11 @@
 # WICKED
-WICKED is a creativity-supporting chatbot that's devoted to helping testers be more creative when designing testing scenarios during exploratory testing sessions. This repository contains the experimental application's code and data used in the research evaluation.
-
+WICKED is a creativity-supporting chatbot that's devoted to helping testers be more creative when designing testing scenarios during exploratory testing sessions. 
 
 **Status:** Internal draft (not submitted). Cycle 1 complete; Cycle 2 ongoing.
 
 **Abstract:**  
-We build a multi-agent LLM chatbot to support creativity in exploratory testing by encouraging divergent and critical thinking. Two agents (Brainstormer and Assumption Buster) use creativity-support communication patterns. Scripted dialogue assessments show that targeted system instructions and web retrieval improve both the strength and consistency of these behaviors versus a baseline. Human-centric evaluation is next.
+We build a multi-agent LLM chatbot to support creativity in exploratory testing by encouraging divergent and critical thinking. Two agents (Brainstormer and Assumption Buster) use creativity-support communication patterns. Scripted dialogue assessments show that targeted system instructions and web retrieval improve both the strength and consistency of these behaviors versus a baseline. Human-centric evaluation is next. This repository contains the experimental application's code and data used in the research evaluation.
+
 
 🔁 Reproduction: see [`cycle 1/`](experiment/cycle-1/README.md)
 
