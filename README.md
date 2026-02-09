@@ -8,9 +8,10 @@ WICKED is a creativity-supporting chatbot that's devoted to helping testers be m
 🔁 Reproduction: see [`experiments/`](experiments/README.md) 
 
 
+
+# Installation
 ## Prerequisites
 Python 3.11+
-## Installation
 ### 1. Clone the repository:
 ```
 cd wicked-demo
