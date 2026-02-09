@@ -13,9 +13,9 @@ Cycle 1 uses two conditions:
 
 ## Folder structure
 - `control-group/`
-  - Artifacts and logs for the baseline condition (scripted dialogues and annotation outputs).
+  - Artifacts and logs for the baseline condition (scripted dialogues and coding outputs).
 - `treat-group/`
-  - Artifacts and logs for the treatment condition (scripted dialogues and annotation outputs).
+  - Artifacts and logs for the treatment condition (scripted dialogues and coding outputs).
 - `Calibration Exercise.docx`
   - Coding calibration material (definitions, examples, and coder alignment exercise).
 - `Dialogue Annotation Results.pptx`
