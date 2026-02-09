@@ -1,5 +1,5 @@
 # WICKED
-WICKED is a creativity-supporting chatbot that's devoted to helping testers be more innovative when designing testing scenarios during exploratory testing sessions. 
+WICKED is a creativity-supporting chatbot that's devoted to helping testers be more creative when designing testing scenarios during exploratory testing sessions. 
 
 **Status:** Internal draft (not submitted). Cycle 1 complete; Cycle 2 ongoing.
 
