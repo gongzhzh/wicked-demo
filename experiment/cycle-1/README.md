@@ -3,8 +3,11 @@
 
 This folder contains the materials and artifacts for **Cycle 1** of our research evaluation.
 Cycle 1 includes two scripted dialogue experiments targeting different evaluation goals. 
+
 (1) **Magnitude** is assessed via a treatment-vs-control comparison, measuring whether the treatment induces the intended creativity-support communication patterns more strongly than the baseline. 
+
 (2) **Consistency (robustness)** is assessed by varying dialogue settings (e.g., user personas and prompt formulations) and examining whether the same patterns persist with limited variation. 
+
 Together, the two experiments capture both the strength of the intended behaviors and their stability under controlled changes.
 
 Cycle 1 uses two conditions:
